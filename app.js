@@ -14,7 +14,7 @@ let usersDataCache = null; // Cache for user data
 let isLoadingUsers = false; // Prevent multiple simultaneous loads
 
 // Google Sheets CSV URL for user credentials
-const USER_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=0&single=true&output=csv";
+const USER_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=0&single=true&output=csv";
 
 // Makthab-specific sheet URLs for checking existing submissions
 const MAKTHAB_URLS = {
@@ -39,7 +39,7 @@ const submissionCache = new Map();
 class GoogleSheetsAPI {
     constructor() {
         // IMPORTANT: Replace this URL with your Google Apps Script Web App URL
-        this.apiUrl = "https://script.google.com/macros/s/AKfycbw3VUkqEbM-YON7Xshbpb3pBMCZ6uoxuA1N6LjfBAAVXQLy2bFnbq0amPzDRfkEqyDM/exec";
+        this.apiUrl = "https://script.google.com/macros/s/AKfycbz9GpBbc-dtYRKDrDdah-963t3UA8TyuGLcRZ_xCMtLHH_1oJm7J7g7Ak6RRF2cccna/exec";
     }
 
     async addPrayerRecord(sheetName, rowData) {
