@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
+    <title>Student Rankings · Tharbiyya</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+            min-height: 100vh;
+        }
+        
+        .nav-container {
+            background: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            padding: 0.75rem 1rem;
+            scrollbar-width: thin;
+        }
+        
+        .nav-links::-webkit-scrollbar {
+            height: 3px;
+        }
+        
+        .nav-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            font-weight: 500;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+            background: #f3f4f6;
+            color: #4b5563;
+            white-space: nowrap;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .nav-btn:hover {
+            background: #e5e7eb;
+            transform: translateY(-1px);
+        }
+        
+        .nav-btn.active {
+            background: #059669;
+            color: white;
+        }
+        
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+        
+        .ranking-card {
+            background: white;
+            border-radius: 24px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+            margin-bottom: 1.5rem;
+        }
+        
+        .ranking-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .ranking-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .ranking-title i {
+            color: #059669;
+            font-size: 1.75rem;
+        }
+        
+        .date-range-selector, .type-selector-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: #f9fafb;
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            flex-wrap: wrap;
+        }
+        
+        .type-selector-wrapper {
+            background: transparent;
+            padding: 0;
+        }
+        
+        .type-select {
+            padding: 0.5rem 1rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 40px;
+            background: white;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #1f2937;
+            outline: none;
+            cursor: pointer;
+        }
+        
+        .date-range-selector label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #4b5563;
+        }
+        
+        .date-input {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 40px;
+            font-size: 0.85rem;
+            background: white;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        
+        .date-input:hover {
+            border-color: #059669;
+        }
+        
+        .date-input:focus {
+            border-color: #059669;
+            box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.1);
+        }
+        
+        .apply-btn, .refresh-btn {
+            background: #059669;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        
+        .apply-btn:hover {
+            background: #047857;
+        }
+        
+        .refresh-btn {
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+        
+        .refresh-btn:hover {
+            background: #e5e7eb;
+        }
+        
+        .ranking-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .ranking-table th,
+        .ranking-table td {
+            padding: 1rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .ranking-table th {
+            background: #f9fafb;
+            font-weight: 600;
+            color: #374151;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .ranking-table tr:hover {
+            background: #f9fafb;
+        }
+        
+        .rank-cell {
+            font-weight: 700;
+            width: 70px;
+        }
+        
+        .rank-1 { color: #fbbf24; }
+        .rank-2 { color: #9ca3af; }
+        .rank-3 { color: #cd7f32; }
+        
+        .points-cell {
+            font-weight: 700;
+            color: #059669;
+            font-size: 1.1rem;
+        }
+        
+        .loading-spinner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #059669;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #9ca3af;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #059669, #047857);
+            border-radius: 20px;
+            padding: 1.25rem;
+            color: white;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        
+        .stat-label {
+            font-size: 0.8rem;
+            opacity: 0.9;
+            margin-top: 0.25rem;
+        }
+        
+        .date-badge {
+            background: #f3f4f6;
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            font-size: 0.8rem;
+            color: #4b5563;
+            display: inline-block;
+            margin-bottom: 1rem;
+        }
+        
+        .eye-btn {
+            background: none;
+            border: none;
+            color: #6b7280;
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 4px 8px;
+            border-radius: 20px;
+            transition: all 0.2s;
+        }
+        .eye-btn:hover {
+            background: #e5e7eb;
+            color: #059669;
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1rem;
+        }
+        .modal-card {
+            background: white;
+            border-radius: 24px;
+            max-width: 1000px;
+            width: 100%;
+            max-height: 85vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+        .modal-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-body {
+            padding: 1.5rem;
+            overflow-y: auto;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #6b7280;
+        }
+        .submission-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        .submission-table th {
+            background: #f3f4f6;
+            padding: 0.6rem;
+            text-align: center;
+        }
+        .submission-table td {
+            padding: 0.5rem;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        
+        @media (max-width: 768px) {
+            .main-container { padding: 1rem; }
+            .ranking-card { padding: 1rem; }
+            .ranking-table th, .ranking-table td { padding: 0.75rem 0.5rem; font-size: 0.8rem; }
+            .ranking-title { font-size: 1.2rem; }
+            .points-cell { font-size: 1rem; }
+        }
+        
+        .points-legend {
+            background: #f9fafb;
+            padding: 0.75rem 1rem;
+            border-radius: 16px;
+            margin-top: 1rem;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1.5rem;
+            font-size: 0.75rem;
+        }
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .legend-color {
+            width: 12px; height: 12px; border-radius: 4px;
+        }
+        .legend-color.ada { background: #059669; }
+        .legend-color.qala { background: #3b82f6; }
+        .legend-color.no { background: #ef4444; }
+    </style>
+</head>
+<body>
+<div class="nav-container">
+    <div class="max-w-[1200px] mx-auto">
+        <div class="nav-links" id="navLinks">
+            <button class="nav-btn active" data-page="custom">
+                <i class="fas fa-calendar-alt mr-2"></i>Custom Date Range
+            </button>
+            <!-- Monthly removed, only class buttons remain -->
+            <button class="nav-btn" data-page="class-1"><i class="fas fa-graduation-cap mr-2"></i>Class 1</button>
+            <button class="nav-btn" data-page="class-2"><i class="fas fa-graduation-cap mr-2"></i>Class 2</button>
+            <button class="nav-btn" data-page="class-3"><i class="fas fa-graduation-cap mr-2"></i>Class 3</button>
+            <button class="nav-btn" data-page="class-4"><i class="fas fa-graduation-cap mr-2"></i>Class 4</button>
+            <button class="nav-btn" data-page="class-5"><i class="fas fa-graduation-cap mr-2"></i>Class 5</button>
+            <button class="nav-btn" data-page="class-6"><i class="fas fa-graduation-cap mr-2"></i>Class 6</button>
+            <button class="nav-btn" data-page="class-7"><i class="fas fa-graduation-cap mr-2"></i>Class 7</button>
+            <button class="nav-btn" data-page="class-8"><i class="fas fa-graduation-cap mr-2"></i>Class 8</button>
+            <button class="nav-btn" data-page="class-9"><i class="fas fa-graduation-cap mr-2"></i>Class 9</button>
+            <button class="nav-btn" data-page="class-10"><i class="fas fa-graduation-cap mr-2"></i>Class 10</button>
+        </div>
+    </div>
+</div>
+
+<div class="main-container" id="mainContent">
+    <div class="loading-spinner"><div class="spinner"></div></div>
+</div>
+
+<script>
+    (function(){
+        // ---------- CONFIG ----------
+        const CLASS_URLS = {
+            1: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=489329760&single=true&output=csv",
+            2: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=428928738&single=true&output=csv",
+            3: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=1221669068&single=true&output=csv",
+            4: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=217652018&single=true&output=csv",
+            5: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=1691881671&single=true&output=csv",
+            6: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=1246984609&single=true&output=csv",
+            7: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=469514472&single=true&output=csv",
+            8: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=272645470&single=true&output=csv",
+            9: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=1743514473&single=true&output=csv",
+            10: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=820085037&single=true&output=csv"
+        };
+
+        const FARD_COLS = ["subh", "zuhr", "asr", "magrib", "isha"];
+        const RAWATIB_COLS = ["b-subh", "b-zuhr", "a-zuhr", "b-asr", "a-magrib", "a-isha"];
+        const ALL_PRAYER_COLS = [...FARD_COLS, ...RAWATIB_COLS];
+
+        // ---------- GLOBAL STATE ----------
+        let cachedData = {};            // classNum -> array of raw rows (with original fields)
+        let currentPage = "custom";
+        let currentStartDate = null;
+        let currentEndDate = null;
+        let currentRankingType = "grand"; // "fard", "rawatib", "grand"
+        let isLoading = false;
+
+        // ---------- UTILS ----------
+        function parseCSV(csvText) {
+            const rows = [];
+            const lines = csvText.split('\n');
+            if (lines.length === 0) return rows;
+            const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+            for (let i = 1; i < lines.length; i++) {
+                if (lines[i].trim() === '') continue;
+                const values = [];
+                let inQuote = false;
+                let current = '';
+                for (let char of lines[i]) {
+                    if (char === '"') inQuote = !inQuote;
+                    else if (char === ',' && !inQuote) { values.push(current.trim()); current = ''; }
+                    else current += char;
+                }
+                values.push(current.trim());
+                const clean = values.map(v => v.replace(/^"|"$/g, ''));
+                const row = {};
+                headers.forEach((h, idx) => { row[h] = clean[idx] || ''; });
+                rows.push(row);
+            }
+            return rows;
+        }
+
+        async function fetchCSV(url) {
+            const resp = await fetch(url);
+            const text = await resp.text();
+            return parseCSV(text);
+        }
+
+        function calculatePoints(record, type) {
+            let total = 0;
+            let columns = type === 'fard' ? FARD_COLS : (type === 'rawatib' ? RAWATIB_COLS : ALL_PRAYER_COLS);
+            for (let col of columns) {
+                const val = record[col];
+                if (val && val !== '') {
+                    const pts = parseFloat(val);
+                    if (!isNaN(pts)) total += pts;
+                }
+            }
+            return total;
+        }
+
+        function formatDisplayDate(dateStr) {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ---------- DATA LOADING ----------
+        async function loadAllClassData() {
+            const all = {};
+            const proms = [];
+            for (let i=1; i<=10; i++) {
+                proms.push(fetchCSV(CLASS_URLS[i]).then(data => { all[i] = data; }).catch(e => { console.warn(e); all[i] = []; }));
+            }
+            await Promise.all(proms);
+            cachedData = all;
+        }
+
+        // ---------- RANKING CALCULATION (with type) ----------
+        function getCustomRangeRankings(allData, startDate, endDate, type) {
+            const records = [];
+            for (let cls in allData) {
+                for (let rec of allData[cls]) {
+                    const d = rec.date;
+                    if (d && d >= startDate && d <= endDate) {
+                        records.push({ ...rec, class: cls });
+                    }
+                }
+            }
+            const studentMap = new Map(); // key: name
+            for (let rec of records) {
+                const name = rec.name;
+                if (!name) continue;
+                const pts = calculatePoints(rec, type);
+                if (!studentMap.has(name)) {
+                    studentMap.set(name, {
+                        name, class: rec.class,
+                        totalPoints: 0, daysActive: new Set(),
+                        rawRecords: []  // store for details
+                    });
+                }
+                const entry = studentMap.get(name);
+                entry.totalPoints += pts;
+                entry.daysActive.add(rec.date);
+                entry.rawRecords.push(rec); // keep all submissions
+            }
+            let arr = Array.from(studentMap.values()).map(s => ({
+                ...s,
+                daysActive: s.daysActive.size
+            }));
+            arr.sort((a,b) => b.totalPoints - a.totalPoints);
+            arr = arr.map((s, idx) => ({ ...s, rank: idx+1 }));
+            const totalDays = Math.ceil((new Date(endDate) - new Date(startDate))/(1000*60*60*24)) + 1;
+            return { rankings: arr.slice(0,10), allRankings: arr, startDate, endDate, totalStudents: arr.length, totalDays };
+        }
+
+        function getClassRankings(classData, classNum, type) {
+            const studentMap = new Map();
+            for (let rec of classData) {
+                const name = rec.name;
+                if (!name) continue;
+                const pts = calculatePoints(rec, type);
+                if (!studentMap.has(name)) {
+                    studentMap.set(name, { name, totalPoints:0, daysCount:0, rawRecords:[] });
+                }
+                const e = studentMap.get(name);
+                e.totalPoints += pts;
+                e.daysCount++;
+                e.rawRecords.push(rec);
+            }
+            let arr = Array.from(studentMap.values());
+            arr.sort((a,b) => b.totalPoints - a.totalPoints);
+            arr = arr.map((s,idx)=>({...s, rank:idx+1}));
+            return { rankings: arr, className: classNum, totalStudents: arr.length, totalSubmissions: classData.length };
+        }
+
+        // ---------- MODAL FOR DETAILS ----------
+        function showStudentDetails(student, contextData) {
+            // student.rawRecords contains all submissions
+            const records = student.rawRecords || [];
+            if (!records.length) {
+                alert("No submission details available.");
+                return;
+            }
+            // sort by date desc
+            const sorted = [...records].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+            const headers = ['Date', 'Time', 'Name', 'Class', ...ALL_PRAYER_COLS];
+            
+            let rowsHtml = '';
+            sorted.forEach(r => {
+                let tds = '';
+                tds += `<td>${escapeHtml(r.date || '')}</td>`;
+                tds += `<td>${escapeHtml(r.time || '')}</td>`;
+                tds += `<td>${escapeHtml(r.name || '')}</td>`;
+                tds += `<td>${escapeHtml(r.class || '')}</td>`;
+                ALL_PRAYER_COLS.forEach(col => { tds += `<td>${escapeHtml(r[col] || '')}</td>`; });
+                rowsHtml += `<tr>${tds}</tr>`;
+            });
+
+            const modalHtml = `
+                <div class="modal-overlay" id="detailModal">
+                    <div class="modal-card">
+                        <div class="modal-header">
+                            <h3 style="font-weight:600;"><i class="fas fa-user-graduate mr-2" style="color:#059669;"></i>${escapeHtml(student.name)} (Class ${escapeHtml(student.class)})</h3>
+                            <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
+                        </div>
+                        <div class="modal-body">
+                            <div style="overflow-x:auto;">
+                                <table class="submission-table">
+                                    <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+                                    <tbody>${rowsHtml}</tbody>
+                                </table>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-3">Total submissions: ${sorted.length}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            const existing = document.getElementById('detailModal');
+            if(existing) existing.remove();
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+
+        window.closeModal = function() {
+            const m = document.getElementById('detailModal');
+            if(m) m.remove();
+        };
+
+        // ---------- RENDER CUSTOM ----------
+        function renderCustomRange(allData, startDate, endDate, type) {
+            if (!startDate || !endDate) {
+                const today = new Date();
+                const weekAgo = new Date(today); weekAgo.setDate(today.getDate()-6);
+                startDate = weekAgo.toISOString().split('T')[0];
+                endDate = today.toISOString().split('T')[0];
+                currentStartDate = startDate; currentEndDate = endDate;
+            }
+            const range = getCustomRangeRankings(allData, startDate, endDate, type);
+            const typeLabel = type === 'fard' ? 'Fard' : (type==='rawatib' ? 'Rawatib' : 'Grand Total');
+            
+            const selector = `
+                <div style="display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center;">
+                    <div class="date-range-selector">
+                        <label><i class="fas fa-calendar-alt mr-1"></i>From:</label>
+                        <input type="date" id="startDate" class="date-input" value="${startDate}">
+                        <label>To:</label>
+                        <input type="date" id="endDate" class="date-input" value="${endDate}">
+                        <button class="apply-btn" onclick="applyDateRange()"><i class="fas fa-search mr-1"></i>Apply</button>
+                    </div>
+                    <div class="type-selector-wrapper">
+                        <select id="rankingTypeSelect" class="type-select">
+                            <option value="fard" ${type==='fard'?'selected':''}>Fard Total</option>
+                            <option value="rawatib" ${type==='rawatib'?'selected':''}>Rawatib Total</option>
+                            <option value="grand" ${type==='grand'?'selected':''}>Grand Total</option>
+                        </select>
+                        <button class="refresh-btn" onclick="applyTypeChange()"><i class="fas fa-sync-alt"></i></button>
+                    </div>
+                </div>
+            `;
+            
+            if (!range.rankings.length) {
+                return `<div class="ranking-card"><div class="ranking-header"><div class="ranking-title"><i class="fas fa-calendar-alt"></i>Custom Range (${typeLabel})</div>${selector}</div><div class="empty-state">No data for this range.</div></div>`;
+            }
+            
+            const stats = `
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-value">${range.totalStudents}</div><div class="stat-label">Active Students</div></div>
+                    <div class="stat-card"><div class="stat-value">${range.rankings[0]?.totalPoints||0}</div><div class="stat-label">Top Score</div></div>
+                    <div class="stat-card"><div class="stat-value">${range.totalDays}</div><div class="stat-label">Total Days</div></div>
+                </div>
+            `;
+            
+            let rows = '';
+            range.rankings.forEach(s => {
+                let rankCls = s.rank===1?'rank-1':(s.rank===2?'rank-2':(s.rank===3?'rank-3':''));
+                rows += `<tr>
+                    <td class="rank-cell"><span class="${rankCls} font-bold">#${s.rank}</span></td>
+                    <td><div class="font-medium">${escapeHtml(s.name)}</div><div class="text-xs text-gray-500">Class ${s.class}</div></td>
+                    <td class="points-cell">${s.totalPoints} pts</td>
+                    <td class="text-sm text-gray-500">${s.daysActive}/${range.totalDays} days</td>
+                    <td><button class="eye-btn" onclick="showDetailsFromCache('${escapeHtml(s.name)}', '${s.class}', 'custom')"><i class="fas fa-eye"></i></button></td>
+                </tr>`;
+            });
+            
+            return `<div class="ranking-card">
+                <div class="ranking-header"><div class="ranking-title"><i class="fas fa-calendar-alt"></i>Custom Range · ${typeLabel} (Top 10)</div>${selector}</div>
+                <div class="date-badge"><i class="fas fa-calendar-alt mr-1"></i>${formatDisplayDate(startDate)} - ${formatDisplayDate(endDate)}</div>
+                ${stats}
+                <div style="overflow-x:auto;"><table class="ranking-table"><thead><tr><th>Rank</th><th>Student</th><th>Total Points</th><th>Active Days</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+            </div>`;
+        }
+
+        // ---------- RENDER CLASS ----------
+        function renderClassRankings(classData, classNum, type) {
+            const rankData = getClassRankings(classData, classNum, type);
+            const typeLabel = type==='fard'?'Fard':(type==='rawatib'?'Rawatib':'Grand');
+            
+            const selector = `
+                <div class="type-selector-wrapper">
+                    <select id="rankingTypeSelect" class="type-select">
+                        <option value="fard" ${type==='fard'?'selected':''}>Fard</option>
+                        <option value="rawatib" ${type==='rawatib'?'selected':''}>Rawatib</option>
+                        <option value="grand" ${type==='grand'?'selected':''}>Grand</option>
+                    </select>
+                    <button class="refresh-btn" onclick="applyTypeChange()"><i class="fas fa-sync-alt"></i></button>
+                </div>
+            `;
+            
+            if (!rankData.rankings.length) {
+                return `<div class="ranking-card"><div class="ranking-header"><div class="ranking-title"><i class="fas fa-graduation-cap"></i>Class ${classNum} · ${typeLabel}</div>${selector}</div><div class="empty-state">No data.</div></div>`;
+            }
+            
+            const stats = `
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-value">${rankData.totalStudents}</div><div class="stat-label">Students</div></div>
+                    <div class="stat-card"><div class="stat-value">${rankData.rankings[0]?.totalPoints||0}</div><div class="stat-label">Top Score</div></div>
+                    <div class="stat-card"><div class="stat-value">${rankData.totalSubmissions}</div><div class="stat-label">Submissions</div></div>
+                </div>
+            `;
+            
+            let rows = '';
+            rankData.rankings.forEach(s => {
+                let rankCls = s.rank===1?'rank-1':(s.rank===2?'rank-2':(s.rank===3?'rank-3':''));
+                rows += `<tr>
+                    <td class="rank-cell"><span class="${rankCls} font-bold">#${s.rank}</span></td>
+                    <td><div class="font-medium">${escapeHtml(s.name)}</div></td>
+                    <td class="points-cell">${s.totalPoints} pts</td>
+                    <td class="text-sm text-gray-500">${s.daysCount} days</td>
+                    <td><button class="eye-btn" onclick="showDetailsFromCache('${escapeHtml(s.name)}', '${classNum}', 'class')"><i class="fas fa-eye"></i></button></td>
+                </tr>`;
+            });
+            
+            return `<div class="ranking-card">
+                <div class="ranking-header"><div class="ranking-title"><i class="fas fa-graduation-cap"></i>Class ${classNum} · ${typeLabel} (All Time)</div>${selector}</div>
+                ${stats}
+                <div style="overflow-x:auto;"><table class="ranking-table"><thead><tr><th>Rank</th><th>Student</th><th>Total Points</th><th>Active Days</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+            </div>`;
+        }
+
+        // ---------- DETAILS DISPATCH ----------
+        window.showDetailsFromCache = function(studentName, classNum, source) {
+            let records = [];
+            if (source === 'custom') {
+                // find in custom range (current dates)
+                if (currentStartDate && currentEndDate) {
+                    for (let cls in cachedData) {
+                        for (let rec of cachedData[cls]) {
+                            if (rec.date >= currentStartDate && rec.date <= currentEndDate && rec.name === studentName) {
+                                records.push({...rec, class: cls});
+                            }
+                        }
+                    }
+                }
+            } else {
+                // class page: all records for that class, filtered by name
+                const classData = cachedData[classNum] || [];
+                records = classData.filter(r => r.name === studentName).map(r => ({...r, class: classNum}));
+            }
+            if (!records.length) { alert("No detailed submissions found."); return; }
+            showStudentDetails({ name: studentName, class: classNum, rawRecords: records });
+        };
+
+        // ---------- PAGE LOAD ----------
+        async function loadPage(page, startDate=null, endDate=null, type=currentRankingType) {
+            if (isLoading) return;
+            const main = document.getElementById('mainContent');
+            main.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+            isLoading = true;
+            try {
+                if (Object.keys(cachedData).length === 0) await loadAllClassData();
+                let html = '';
+                if (page === 'custom') {
+                    html = renderCustomRange(cachedData, startDate || currentStartDate, endDate || currentEndDate, type);
+                } else if (page.startsWith('class-')) {
+                    const cls = parseInt(page.split('-')[1]);
+                    html = renderClassRankings(cachedData[cls] || [], cls, type);
+                }
+                main.innerHTML = html;
+            } catch(e) {
+                main.innerHTML = `<div class="ranking-card"><div class="empty-state"><i class="fas fa-exclamation-triangle"></i> Error</div></div>`;
+            } finally { isLoading = false; }
+        }
+
+        window.applyDateRange = function() {
+            const start = document.getElementById('startDate')?.value;
+            const end = document.getElementById('endDate')?.value;
+            if (!start || !end) { alert('Select both dates'); return; }
+            if (start > end) { alert('Start must be before end'); return; }
+            currentStartDate = start; currentEndDate = end;
+            const sel = document.getElementById('rankingTypeSelect');
+            if (sel) currentRankingType = sel.value;
+            loadPage(currentPage, start, end, currentRankingType);
+        };
+
+        window.applyTypeChange = function() {
+            const sel = document.getElementById('rankingTypeSelect');
+            if (sel) currentRankingType = sel.value;
+            if (currentPage === 'custom') {
+                loadPage('custom', currentStartDate, currentEndDate, currentRankingType);
+            } else {
+                loadPage(currentPage, null, null, currentRankingType);
+            }
+        };
+
+        window.refreshData = async function() {
+            cachedData = {};
+            await loadPage(currentPage, currentStartDate, currentEndDate, currentRankingType);
+        };
+
+        function setupNav() {
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentPage = btn.dataset.page;
+                    await loadPage(currentPage, currentStartDate, currentEndDate, currentRankingType);
+                });
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', async ()=>{
+            setupNav();
+            // set default dates
+            const today = new Date();
+            const weekAgo = new Date(today); weekAgo.setDate(today.getDate()-6);
+            currentStartDate = weekAgo.toISOString().split('T')[0];
+            currentEndDate = today.toISOString().split('T')[0];
+            currentRankingType = 'grand';
+            await loadPage('custom', currentStartDate, currentEndDate, 'grand');
+        });
+
+        window.refreshData = refreshData;
+        console.log('Tharbiyya — Fard / Rawatib / Grand, eye details ready');
+    })();
+</script>
+</body>
+</html>
