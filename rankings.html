@@ -399,17 +399,17 @@
             <button class="nav-btn active" data-page="custom">
                 <i class="fas fa-calendar-alt mr-2"></i>Custom Date Range
             </button>
-            <!-- Monthly removed, only class buttons remain -->
-            <button class="nav-btn" data-page="class-1"><i class="fas fa-graduation-cap mr-2"></i>Class 1</button>
-            <button class="nav-btn" data-page="class-2"><i class="fas fa-graduation-cap mr-2"></i>Class 2</button>
-            <button class="nav-btn" data-page="class-3"><i class="fas fa-graduation-cap mr-2"></i>Class 3</button>
-            <button class="nav-btn" data-page="class-4"><i class="fas fa-graduation-cap mr-2"></i>Class 4</button>
-            <button class="nav-btn" data-page="class-5"><i class="fas fa-graduation-cap mr-2"></i>Class 5</button>
-            <button class="nav-btn" data-page="class-6"><i class="fas fa-graduation-cap mr-2"></i>Class 6</button>
-            <button class="nav-btn" data-page="class-7"><i class="fas fa-graduation-cap mr-2"></i>Class 7</button>
-            <button class="nav-btn" data-page="class-8"><i class="fas fa-graduation-cap mr-2"></i>Class 8</button>
-            <button class="nav-btn" data-page="class-9"><i class="fas fa-graduation-cap mr-2"></i>Class 9</button>
-            <button class="nav-btn" data-page="class-10"><i class="fas fa-graduation-cap mr-2"></i>Class 10</button>
+            <!-- Makthab buttons -->
+            <button class="nav-btn" data-page="makthab-1"><i class="fas fa-graduation-cap mr-2"></i>Makthab 1</button>
+            <button class="nav-btn" data-page="makthab-2"><i class="fas fa-graduation-cap mr-2"></i>Makthab 2</button>
+            <button class="nav-btn" data-page="makthab-3"><i class="fas fa-graduation-cap mr-2"></i>Makthab 3</button>
+            <button class="nav-btn" data-page="makthab-4"><i class="fas fa-graduation-cap mr-2"></i>Makthab 4</button>
+            <button class="nav-btn" data-page="makthab-5"><i class="fas fa-graduation-cap mr-2"></i>Makthab 5</button>
+            <button class="nav-btn" data-page="makthab-6"><i class="fas fa-graduation-cap mr-2"></i>Makthab 6</button>
+            <button class="nav-btn" data-page="makthab-7"><i class="fas fa-graduation-cap mr-2"></i>Makthab 7</button>
+            <button class="nav-btn" data-page="makthab-8"><i class="fas fa-graduation-cap mr-2"></i>Makthab 8</button>
+            <button class="nav-btn" data-page="makthab-9"><i class="fas fa-graduation-cap mr-2"></i>Makthab 9</button>
+            <button class="nav-btn" data-page="makthab-10"><i class="fas fa-graduation-cap mr-2"></i>Makthab 10</button>
         </div>
     </div>
 </div>
@@ -421,17 +421,17 @@
 <script>
     (function(){
         // ---------- CONFIG ----------
-        const CLASS_URLS = {
-            1: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=489329760&single=true&output=csv",
-            2: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=428928738&single=true&output=csv",
-            3: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=1221669068&single=true&output=csv",
-            4: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=217652018&single=true&output=csv",
-            5: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=1691881671&single=true&output=csv",
-            6: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=1246984609&single=true&output=csv",
-            7: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=469514472&single=true&output=csv",
-            8: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=272645470&single=true&output=csv",
-            9: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=1743514473&single=true&output=csv",
-            10: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSOGrONCLJ53Hf3jKE7VA7ro-yZmlzc_lFy9CxKvL_8VBuXRQp7hZxLjUpy0wmf28TYAn2HQ-uaV5r/pub?gid=820085037&single=true&output=csv"
+        const MAKTHAB_URLS = {
+            1: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=489329760&single=true&output=csv",
+    2: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=428928738&single=true&output=csv",
+    3: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=1221669068&single=true&output=csv",
+    4: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=217652018&single=true&output=csv",
+    5: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=1691881671&single=true&output=csv",
+    6: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=1246984609&single=true&output=csv",
+    7: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=469514472&single=true&output=csv",
+    8: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=272645470&single=true&output=csv",
+    9: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=1743514473&single=true&output=csv",
+    10: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=820085037&single=true&output=csv"
         };
 
         const FARD_COLS = ["subh", "zuhr", "asr", "magrib", "isha"];
@@ -439,7 +439,7 @@
         const ALL_PRAYER_COLS = [...FARD_COLS, ...RAWATIB_COLS];
 
         // ---------- GLOBAL STATE ----------
-        let cachedData = {};            // classNum -> array of raw rows (with original fields)
+        let cachedData = {};            // makthabNum -> array of raw rows (with original fields)
         let currentPage = "custom";
         let currentStartDate = null;
         let currentEndDate = null;
@@ -503,11 +503,11 @@
         }
 
         // ---------- DATA LOADING ----------
-        async function loadAllClassData() {
+        async function loadAllMakthabData() {
             const all = {};
             const proms = [];
             for (let i=1; i<=10; i++) {
-                proms.push(fetchCSV(CLASS_URLS[i]).then(data => { all[i] = data; }).catch(e => { console.warn(e); all[i] = []; }));
+                proms.push(fetchCSV(MAKTHAB_URLS[i]).then(data => { all[i] = data; }).catch(e => { console.warn(e); all[i] = []; }));
             }
             await Promise.all(proms);
             cachedData = all;
@@ -516,11 +516,11 @@
         // ---------- RANKING CALCULATION (with type) ----------
         function getCustomRangeRankings(allData, startDate, endDate, type) {
             const records = [];
-            for (let cls in allData) {
-                for (let rec of allData[cls]) {
+            for (let makthab in allData) {
+                for (let rec of allData[makthab]) {
                     const d = rec.date;
                     if (d && d >= startDate && d <= endDate) {
-                        records.push({ ...rec, class: cls });
+                        records.push({ ...rec, makthab: makthab });
                     }
                 }
             }
@@ -531,7 +531,7 @@
                 const pts = calculatePoints(rec, type);
                 if (!studentMap.has(name)) {
                     studentMap.set(name, {
-                        name, class: rec.class,
+                        name, makthab: rec.makthab,
                         totalPoints: 0, daysActive: new Set(),
                         rawRecords: []  // store for details
                     });
@@ -551,9 +551,9 @@
             return { rankings: arr.slice(0,10), allRankings: arr, startDate, endDate, totalStudents: arr.length, totalDays };
         }
 
-        function getClassRankings(classData, classNum, type) {
+        function getMakthabRankings(makthabData, makthabNum, type) {
             const studentMap = new Map();
-            for (let rec of classData) {
+            for (let rec of makthabData) {
                 const name = rec.name;
                 if (!name) continue;
                 const pts = calculatePoints(rec, type);
@@ -568,7 +568,7 @@
             let arr = Array.from(studentMap.values());
             arr.sort((a,b) => b.totalPoints - a.totalPoints);
             arr = arr.map((s,idx)=>({...s, rank:idx+1}));
-            return { rankings: arr, className: classNum, totalStudents: arr.length, totalSubmissions: classData.length };
+            return { rankings: arr, makthabName: makthabNum, totalStudents: arr.length, totalSubmissions: makthabData.length };
         }
 
         // ---------- MODAL FOR DETAILS ----------
@@ -581,7 +581,7 @@
             }
             // sort by date desc
             const sorted = [...records].sort((a,b) => (b.date||'').localeCompare(a.date||''));
-            const headers = ['Date', 'Time', 'Name', 'Class', ...ALL_PRAYER_COLS];
+            const headers = ['Date', 'Time', 'Name', 'Makthab', ...ALL_PRAYER_COLS];
             
             let rowsHtml = '';
             sorted.forEach(r => {
@@ -589,7 +589,7 @@
                 tds += `<td>${escapeHtml(r.date || '')}</td>`;
                 tds += `<td>${escapeHtml(r.time || '')}</td>`;
                 tds += `<td>${escapeHtml(r.name || '')}</td>`;
-                tds += `<td>${escapeHtml(r.class || '')}</td>`;
+                tds += `<td>${escapeHtml(r.makthab || '')}</td>`;
                 ALL_PRAYER_COLS.forEach(col => { tds += `<td>${escapeHtml(r[col] || '')}</td>`; });
                 rowsHtml += `<tr>${tds}</tr>`;
             });
@@ -598,7 +598,7 @@
                 <div class="modal-overlay" id="detailModal">
                     <div class="modal-card">
                         <div class="modal-header">
-                            <h3 style="font-weight:600;"><i class="fas fa-user-graduate mr-2" style="color:#059669;"></i>${escapeHtml(student.name)} (Class ${escapeHtml(student.class)})</h3>
+                            <h3 style="font-weight:600;"><i class="fas fa-user-graduate mr-2" style="color:#059669;"></i>${escapeHtml(student.name)} (Makthab ${escapeHtml(student.makthab)})</h3>
                             <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
                         </div>
                         <div class="modal-body">
@@ -672,10 +672,10 @@
                 let rankCls = s.rank===1?'rank-1':(s.rank===2?'rank-2':(s.rank===3?'rank-3':''));
                 rows += `<tr>
                     <td class="rank-cell"><span class="${rankCls} font-bold">#${s.rank}</span></td>
-                    <td><div class="font-medium">${escapeHtml(s.name)}</div><div class="text-xs text-gray-500">Class ${s.class}</div></td>
+                    <td><div class="font-medium">${escapeHtml(s.name)}</div><div class="text-xs text-gray-500">Makthab ${s.makthab}</div></td>
                     <td class="points-cell">${s.totalPoints} pts</td>
                     <td class="text-sm text-gray-500">${s.daysActive}/${range.totalDays} days</td>
-                    <td><button class="eye-btn" onclick="showDetailsFromCache('${escapeHtml(s.name)}', '${s.class}', 'custom')"><i class="fas fa-eye"></i></button></td>
+                    <td><button class="eye-btn" onclick="showDetailsFromCache('${escapeHtml(s.name)}', '${s.makthab}', 'custom')"><i class="fas fa-eye"></i></button></td>
                 </tr>`;
             });
             
@@ -687,9 +687,9 @@
             </div>`;
         }
 
-        // ---------- RENDER CLASS ----------
-        function renderClassRankings(classData, classNum, type) {
-            const rankData = getClassRankings(classData, classNum, type);
+        // ---------- RENDER MAKTHAB ----------
+        function renderMakthabRankings(makthabData, makthabNum, type) {
+            const rankData = getMakthabRankings(makthabData, makthabNum, type);
             const typeLabel = type==='fard'?'Fard':(type==='rawatib'?'Rawatib':'Grand');
             
             const selector = `
@@ -704,7 +704,7 @@
             `;
             
             if (!rankData.rankings.length) {
-                return `<div class="ranking-card"><div class="ranking-header"><div class="ranking-title"><i class="fas fa-graduation-cap"></i>Class ${classNum} · ${typeLabel}</div>${selector}</div><div class="empty-state">No data.</div></div>`;
+                return `<div class="ranking-card"><div class="ranking-header"><div class="ranking-title"><i class="fas fa-graduation-cap"></i>Makthab ${makthabNum} · ${typeLabel}</div>${selector}</div><div class="empty-state">No data.</div></div>`;
             }
             
             const stats = `
@@ -723,38 +723,38 @@
                     <td><div class="font-medium">${escapeHtml(s.name)}</div></td>
                     <td class="points-cell">${s.totalPoints} pts</td>
                     <td class="text-sm text-gray-500">${s.daysCount} days</td>
-                    <td><button class="eye-btn" onclick="showDetailsFromCache('${escapeHtml(s.name)}', '${classNum}', 'class')"><i class="fas fa-eye"></i></button></td>
+                    <td><button class="eye-btn" onclick="showDetailsFromCache('${escapeHtml(s.name)}', '${makthabNum}', 'makthab')"><i class="fas fa-eye"></i></button></td>
                 </tr>`;
             });
             
             return `<div class="ranking-card">
-                <div class="ranking-header"><div class="ranking-title"><i class="fas fa-graduation-cap"></i>Class ${classNum} · ${typeLabel} (All Time)</div>${selector}</div>
+                <div class="ranking-header"><div class="ranking-title"><i class="fas fa-graduation-cap"></i>Makthab ${makthabNum} · ${typeLabel} (All Time)</div>${selector}</div>
                 ${stats}
                 <div style="overflow-x:auto;"><table class="ranking-table"><thead><tr><th>Rank</th><th>Student</th><th>Total Points</th><th>Active Days</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
             </div>`;
         }
 
         // ---------- DETAILS DISPATCH ----------
-        window.showDetailsFromCache = function(studentName, classNum, source) {
+        window.showDetailsFromCache = function(studentName, makthabNum, source) {
             let records = [];
             if (source === 'custom') {
                 // find in custom range (current dates)
                 if (currentStartDate && currentEndDate) {
-                    for (let cls in cachedData) {
-                        for (let rec of cachedData[cls]) {
+                    for (let makthab in cachedData) {
+                        for (let rec of cachedData[makthab]) {
                             if (rec.date >= currentStartDate && rec.date <= currentEndDate && rec.name === studentName) {
-                                records.push({...rec, class: cls});
+                                records.push({...rec, makthab: makthab});
                             }
                         }
                     }
                 }
             } else {
-                // class page: all records for that class, filtered by name
-                const classData = cachedData[classNum] || [];
-                records = classData.filter(r => r.name === studentName).map(r => ({...r, class: classNum}));
+                // makthab page: all records for that makthab, filtered by name
+                const makthabData = cachedData[makthabNum] || [];
+                records = makthabData.filter(r => r.name === studentName).map(r => ({...r, makthab: makthabNum}));
             }
             if (!records.length) { alert("No detailed submissions found."); return; }
-            showStudentDetails({ name: studentName, class: classNum, rawRecords: records });
+            showStudentDetails({ name: studentName, makthab: makthabNum, rawRecords: records });
         };
 
         // ---------- PAGE LOAD ----------
@@ -764,13 +764,13 @@
             main.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
             isLoading = true;
             try {
-                if (Object.keys(cachedData).length === 0) await loadAllClassData();
+                if (Object.keys(cachedData).length === 0) await loadAllMakthabData();
                 let html = '';
                 if (page === 'custom') {
                     html = renderCustomRange(cachedData, startDate || currentStartDate, endDate || currentEndDate, type);
-                } else if (page.startsWith('class-')) {
-                    const cls = parseInt(page.split('-')[1]);
-                    html = renderClassRankings(cachedData[cls] || [], cls, type);
+                } else if (page.startsWith('makthab-')) {
+                    const makthab = parseInt(page.split('-')[1]);
+                    html = renderMakthabRankings(cachedData[makthab] || [], makthab, type);
                 }
                 main.innerHTML = html;
             } catch(e) {
