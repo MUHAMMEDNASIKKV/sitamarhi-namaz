@@ -8,26 +8,26 @@
 
 // 🌐 Global Variables
 let currentUser = null;
-let currentMakthabSheet = null;
+let currentClassSheet = null;
 let currentDate = null;
 let usersDataCache = null; // Cache for user data
 let isLoadingUsers = false; // Prevent multiple simultaneous loads
 
 // Google Sheets CSV URL for user credentials
-const USER_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=0&single=true&output=csv";
+const USER_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=0&single=true&output=csv";
 
-// Makthab-specific sheet URLs for checking existing submissions
-const MAKTHAB_URLS = {
-    1: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=489329760&single=true&output=csv",
-    2: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=428928738&single=true&output=csv",
-    3: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=1221669068&single=true&output=csv",
-    4: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=217652018&single=true&output=csv",
-    5: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=1691881671&single=true&output=csv",
-    6: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=1246984609&single=true&output=csv",
-    7: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=469514472&single=true&output=csv",
-    8: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=272645470&single=true&output=csv",
-    9: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=1743514473&single=true&output=csv",
-    10: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTZ16Si6gpZ_uHmGOJl4JCuD42ogkztVZu_Acr60eADU7tWGUOXgLhIb53uk2pkwIB1B4szUzCbe51R/pub?gid=820085037&single=true&output=csv"
+// Class-specific sheet URLs for checking existing submissions
+const CLASS_URLS = {
+    1: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=489329760&single=true&output=csv",
+    2: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=428928738&single=true&output=csv",
+    3: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=1221669068&single=true&output=csv",
+    4: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=217652018&single=true&output=csv",
+    5: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=1691881671&single=true&output=csv",
+    6: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=1246984609&single=true&output=csv",
+    7: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=469514472&single=true&output=csv",
+    8: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=272645470&single=true&output=csv",
+    9: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=1743514473&single=true&output=csv",
+    10: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqAIGtqsJsGU0x8X2R1B-NYEMFzdUYxnME-3vE-Slr7z-j3yEG3df-GGzgzwDaRnO8uwblbt3yCrzK/pub?gid=820085037&single=true&output=csv"
 };
 
 // Cache for submission checks to prevent repeated API calls
@@ -39,7 +39,7 @@ const submissionCache = new Map();
 class GoogleSheetsAPI {
     constructor() {
         // IMPORTANT: Replace this URL with your Google Apps Script Web App URL
-        this.apiUrl = "https://script.google.com/macros/s/AKfycbz9GpBbc-dtYRKDrDdah-963t3UA8TyuGLcRZ_xCMtLHH_1oJm7J7g7Ak6RRF2cccna/exec";
+        this.apiUrl = "https://script.google.com/macros/s/AKfycbyeybu9Zg4xglKxMuEC1jhpBIbobPjU6o_y3tTNEcLDejM48UUJnDmQBNjNp93fr_-x/exec";
     }
 
     async addPrayerRecord(sheetName, rowData) {
@@ -123,10 +123,10 @@ async function loadUsersFromCSV(forceReload = false) {
         // Find column indices
         const nameIndex = headers.findIndex(h => h.toLowerCase().trim() === 'name');
         const pswdIndex = headers.findIndex(h => h.toLowerCase().trim() === 'pswd');
-        const makthabIndex = headers.findIndex(h => h.toLowerCase().trim() === 'makthab');
+        const classIndex = headers.findIndex(h => h.toLowerCase().trim() === 'class');
         
-        if (nameIndex === -1 || pswdIndex === -1 || makthabIndex === -1) {
-            console.error('CSV headers not found. Expected: name, pswd, makthab');
+        if (nameIndex === -1 || pswdIndex === -1 || classIndex === -1) {
+            console.error('CSV headers not found. Expected: name, pswd, class');
             return [];
         }
         
@@ -158,13 +158,13 @@ async function loadUsersFromCSV(forceReload = false) {
             
             const name = values[nameIndex];
             const pswd = values[pswdIndex];
-            const userMakthab = values[makthabIndex];
+            const userClass = values[classIndex];
             
-            if (name && pswd && userMakthab) {
+            if (name && pswd && userClass) {
                 users.push({
                     name: name,
                     password: pswd,
-                    makthab: userMakthab
+                    class: userClass
                 });
             }
         }
@@ -184,9 +184,9 @@ async function loadUsersFromCSV(forceReload = false) {
 // =============================
 // 🔍 Check if student already submitted today (with caching)
 // =============================
-async function hasStudentSubmittedToday(studentMakthab, studentName, date) {
+async function hasStudentSubmittedToday(studentClass, studentName, date) {
     // Create cache key
-    const cacheKey = `${studentMakthab}_${studentName}_${date}`;
+    const cacheKey = `${studentClass}_${studentName}_${date}`;
     
     // Check cache first
     if (submissionCache.has(cacheKey)) {
@@ -195,16 +195,16 @@ async function hasStudentSubmittedToday(studentMakthab, studentName, date) {
     }
     
     try {
-        // Get the makthab-specific CSV URL
-        const makthabUrl = MAKTHAB_URLS[parseInt(studentMakthab)];
-        if (!makthabUrl) {
-            console.error('No URL found for makthab:', studentMakthab);
+        // Get the class-specific CSV URL
+        const classUrl = CLASS_URLS[parseInt(studentClass)];
+        if (!classUrl) {
+            console.error('No URL found for class:', studentClass);
             return false;
         }
         
-        console.log(`Checking submission for ${studentName} in makthab ${studentMakthab} on ${date}`);
+        console.log(`Checking submission for ${studentName} in class ${studentClass} on ${date}`);
         
-        const response = await fetch(makthabUrl);
+        const response = await fetch(classUrl);
         const csvText = await response.text();
         
         // Parse CSV
@@ -287,7 +287,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     preloadUserData().then(() => {
         // Once loaded, update the dropdown message
         if (nameSelect.value === 'Loading students...') {
-            nameSelect.innerHTML = '<option value="" disabled selected>-- First Select Makthab --</option>';
+            nameSelect.innerHTML = '<option value="" disabled selected>-- First Select Class --</option>';
         }
     });
     
@@ -312,21 +312,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Add prayer form submit listener
     document.getElementById('prayerForm').addEventListener('submit', submitPrayerForm);
     
-    // Add makthab dropdown change listener to filter names
-    document.getElementById('studentMakthab').addEventListener('change', filterNamesByMakthab);
+    // Add class dropdown change listener to filter names
+    document.getElementById('studentClass').addEventListener('change', filterNamesByClass);
 });
 
-// Optimized function to filter names by makthab with instant loading
-async function filterNamesByMakthab() {
-    const selectedMakthab = document.getElementById('studentMakthab').value;
+// Optimized function to filter names by class with instant loading
+async function filterNamesByClass() {
+    const selectedClass = document.getElementById('studentClass').value;
     const nameSelect = document.getElementById('studentName');
     const passwordInput = document.getElementById('password');
     
-    // Clear password field when makthab changes
+    // Clear password field when class changes
     passwordInput.value = '';
     
-    if (!selectedMakthab) {
-        nameSelect.innerHTML = '<option value="" disabled selected>-- First Select Makthab --</option>';
+    if (!selectedClass) {
+        nameSelect.innerHTML = '<option value="" disabled selected>-- First Select Class --</option>';
         nameSelect.disabled = false;
         return;
     }
@@ -342,10 +342,10 @@ async function filterNamesByMakthab() {
     
     // Use requestAnimationFrame for smoother UI update
     requestAnimationFrame(() => {
-        const filteredUsers = (usersDataCache || []).filter(user => user.makthab === selectedMakthab);
+        const filteredUsers = (usersDataCache || []).filter(user => user.class === selectedClass);
         
         if (filteredUsers.length === 0) {
-            nameSelect.innerHTML = '<option value="" disabled selected>-- No students found in this makthab --</option>';
+            nameSelect.innerHTML = '<option value="" disabled selected>-- No students found in this class --</option>';
             nameSelect.disabled = false;
         } else {
             // Use DocumentFragment for faster DOM manipulation
@@ -361,7 +361,7 @@ async function filterNamesByMakthab() {
                 const option = document.createElement('option');
                 option.value = user.name;
                 option.textContent = `${user.name}`;
-                option.dataset.makthab = user.makthab;
+                option.dataset.class = user.class;
                 option.dataset.password = user.password;
                 fragment.appendChild(option);
             });
@@ -379,14 +379,14 @@ async function login(event) {
     
     const selectedOption = document.getElementById('studentName').selectedOptions[0];
     const studentName = document.getElementById('studentName').value;
-    const studentMakthab = document.getElementById('studentMakthab').value;
+    const studentClass = document.getElementById('studentClass').value;
     const password = document.getElementById('password').value;
     
     // Hide previous error
     hideLoginError();
     
-    if (!studentMakthab) {
-        showLoginError('Please select a makthab');
+    if (!studentClass) {
+        showLoginError('Please select a class');
         return;
     }
     
@@ -421,7 +421,7 @@ async function login(event) {
     
     try {
         // Check if student already submitted today
-        const alreadySubmitted = await hasStudentSubmittedToday(studentMakthab, studentName, currentDate);
+        const alreadySubmitted = await hasStudentSubmittedToday(studentClass, studentName, currentDate);
         
         if (alreadySubmitted) {
             showLoginError(`You have already submitted your prayer status for today (${new Date().toLocaleDateString()}). You can only submit once per day.`);
@@ -433,15 +433,15 @@ async function login(event) {
         // Login successful
         currentUser = {
             name: studentName,
-            makthab: studentMakthab,
+            class: studentClass,
             password: password
         };
         
-        // Set current sheet name based on makthab
-        currentMakthabSheet = `Makthab_${studentMakthab}`;
+        // Set current sheet name based on class
+        currentClassSheet = `Class_${studentClass}`;
         
         // Ensure sheet exists
-        await api.ensureSheetExists(currentMakthabSheet);
+        await api.ensureSheetExists(currentClassSheet);
         
         // Show dashboard
         document.getElementById('loginPage').classList.add('hidden');
@@ -449,7 +449,7 @@ async function login(event) {
         
         // Update UI
         document.getElementById('userNameDisplay').textContent = currentUser.name;
-        document.getElementById('userMakthabDisplay').textContent = `Makthab ${currentUser.makthab}`;
+        document.getElementById('userClassDisplay').textContent = `Class ${currentUser.class}`;
         
         // Clear password field
         document.getElementById('password').value = '';
@@ -476,7 +476,7 @@ function hideLoginError() {
 
 function logout() {
     currentUser = null;
-    currentMakthabSheet = null;
+    currentClassSheet = null;
     
     // Reset forms
     document.getElementById('loginForm').reset();
@@ -484,7 +484,7 @@ function logout() {
     
     // Reset name dropdown to initial state
     const nameSelect = document.getElementById('studentName');
-    nameSelect.innerHTML = '<option value="" disabled selected>-- First Select Makthab --</option>';
+    nameSelect.innerHTML = '<option value="" disabled selected>-- First Select Class --</option>';
     
     // Show login page
     document.getElementById('dashboardPage').classList.add('hidden');
@@ -675,12 +675,12 @@ async function submitPrayerForm(event) {
         const dateStr = now.toISOString().split('T')[0];
         const timeStr = now.toLocaleTimeString('en-GB');
         
-        // Prepare row data: date, time, name, makthab, subh, zuhr, asr, magrib, isha, bSubh, bZuhr, aZuhr, bAsr, aMagrib, aIsha
+        // Prepare row data: date, time, name, class, subh, zuhr, asr, magrib, isha, bSubh, bZuhr, aZuhr, bAsr, aMagrib, aIsha
         const rowData = [
             dateStr, 
             timeStr, 
             currentUser.name, 
-            currentUser.makthab, 
+            currentUser.class, 
             subh,
             zuhr,
             asr,
@@ -698,7 +698,7 @@ async function submitPrayerForm(event) {
             date: dateStr,
             time: timeStr,
             name: currentUser.name,
-            makthab: currentUser.makthab,
+            class: currentUser.class,
             subh: subh,
             zuhr: zuhr,
             asr: asr,
@@ -713,11 +713,11 @@ async function submitPrayerForm(event) {
         });
         
         // Add record to sheet
-        const result = await api.addPrayerRecord(currentMakthabSheet, rowData);
+        const result = await api.addPrayerRecord(currentClassSheet, rowData);
         
         if (result && result.success) {
             // Clear submission cache for this student
-            const cacheKey = `${currentUser.makthab}_${currentUser.name}_${dateStr}`;
+            const cacheKey = `${currentUser.class}_${currentUser.name}_${dateStr}`;
             submissionCache.set(cacheKey, true);
             
             // Build summary for alert
@@ -746,7 +746,7 @@ async function submitPrayerForm(event) {
             showSuccessAlertWithLogout('', fullSummary, function() {
                 // Clear any stored user data
                 currentUser = null;
-                currentMakthabSheet = null;
+                currentClassSheet = null;
                 
                 // Reset forms
                 document.getElementById('loginForm').reset();
@@ -754,11 +754,11 @@ async function submitPrayerForm(event) {
                 
                 // Reset name dropdown to initial state
                 const nameSelect = document.getElementById('studentName');
-                nameSelect.innerHTML = '<option value="" disabled selected>-- First Select Makthab --</option>';
+                nameSelect.innerHTML = '<option value="" disabled selected>-- First Select Class --</option>';
                 
-                // Reset makthab dropdown
-                const makthabSelect = document.getElementById('studentMakthab');
-                makthabSelect.value = '';
+                // Reset class dropdown
+                const classSelect = document.getElementById('studentClass');
+                classSelect.value = '';
                 
                 // Show login page
                 document.getElementById('dashboardPage').classList.add('hidden');
