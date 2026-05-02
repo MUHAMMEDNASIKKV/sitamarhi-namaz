@@ -77,7 +77,10 @@
         background-color: rgba(0, 0, 0, 0.05);
     }
 
-    /* Mobile navigation styles */
+    .nav-btn.active {
+        border-bottom: 3px solid;
+    }
+
     @media (max-width: 768px) {
         .nav-btn {
             padding: 0.375rem 0.75rem;
@@ -111,7 +114,6 @@
         }
     }
 
-    /* Mobile-responsive containers */
     .main-container {
         padding: 0.5rem;
     }
@@ -128,7 +130,7 @@
         }
     }
 
-    /* Subject card styles - mobile responsive */
+    /* Subject card styles */
     .subject-card {
         background: white;
         border-radius: 12px;
@@ -256,7 +258,7 @@
         transform: rotate(180deg);
     }
 
-    /* Attendance records styles - mobile responsive */
+    /* Attendance records styles */
     .attendance-container {
         padding: 0 0.5rem 0.5rem 0.5rem;
         display: none;
@@ -321,7 +323,7 @@
         border-radius: 0.25rem;
     }
 
-    /* Admin styles - mobile responsive */
+    /* Admin styles */
     .admin-filter-section {
         background: white;
         border-radius: 12px;
@@ -402,6 +404,7 @@
         border: 2px solid #e5e7eb;
         transition: all 0.3s ease;
         cursor: pointer;
+        text-align: center;
     }
 
     @media (min-width: 768px) {
@@ -449,7 +452,6 @@
         color: #1f2937;
         margin-bottom: 0.25rem;
         font-size: 0.875rem;
-        text-align: center;
     }
 
     @media (min-width: 768px) {
@@ -462,7 +464,6 @@
         color: #6b7280;
         font-size: 0.75rem;
         margin-bottom: 0.5rem;
-        text-align: center;
     }
 
     @media (min-width: 768px) {
@@ -478,22 +479,32 @@
         border-radius: 0.5rem;
         font-size: 0.75rem;
         font-weight: 600;
-        display: block;
-        text-align: center;
-        margin: 0.5rem auto;
+        display: inline-block;
+        margin-bottom: 0.75rem;
     }
 
     .attendance-checkbox {
         display: flex;
         align-items: center;
         justify-content: center;
+        gap: 0.5rem;
         margin-top: 0.5rem;
+        padding: 0.5rem;
+        border-top: 1px solid #e5e7eb;
     }
 
     .attendance-checkbox input[type="checkbox"] {
         width: 1.25rem;
         height: 1.25rem;
         accent-color: #059669;
+        cursor: pointer;
+    }
+
+    .attendance-checkbox label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #374151;
+        cursor: pointer;
     }
 
     .submit-btn {
@@ -539,13 +550,27 @@
     /* Chart container responsive */
     .chart-container {
         position: relative;
-        height: 250px;
+        height: 300px;
         width: 100%;
+        margin: 0 auto;
+    }
+
+    .chart-container-small {
+        position: relative;
+        height: 200px;
+        width: 200px;
+        margin: 0 auto;
     }
 
     @media (min-width: 768px) {
         .chart-container {
-            height: 300px;
+            height: 350px;
+            max-width: 500px;
+        }
+        
+        .chart-container-small {
+            height: 250px;
+            width: 250px;
         }
     }
 
@@ -560,8 +585,7 @@
 
     .header-info {
         display: flex;
-        items-center;
-        space-x: 0.75rem;
+        align-items: center;
         min-width: 0;
         flex: 1;
     }
@@ -614,12 +638,6 @@
         image-rendering: crisp-edges;
         transform: translateZ(0);
         will-change: transform;
-    }
-
-    @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-        .profile-pic {
-            image-rendering: -webkit-optimize-contrast;
-        }
     }
 
     .profile-pic:hover {
@@ -724,13 +742,6 @@
         color: #dc2626;
     }
 
-    @media (max-width: 768px) {
-        .profile-menu {
-            right: -1rem;
-            min-width: 180px;
-        }
-    }
-
     /* Login container */
     .login-container {
         padding: 1rem;
@@ -743,33 +754,6 @@
             padding: 2rem;
             max-width: 500px;
         }
-    }
-
-    /* Mobile scroll improvements */
-    @media (max-width: 768px) {
-        body {
-            overflow-x: hidden;
-        }
-        
-        .container {
-            padding-left: 1rem;
-            padding-right: 1rem;
-        }
-    }
-
-    /* Loading states */
-    .loading-spinner {
-        display: inline-block;
-        width: 1rem;
-        height: 1rem;
-        border: 2px solid #f3f4f6;
-        border-radius: 50%;
-        border-top-color: #3b82f6;
-        animation: spin 1s ease-in-out infinite;
-    }
-
-    @keyframes spin {
-        to { transform: rotate(360deg); }
     }
 
     /* Attendance summary cards */
@@ -846,6 +830,66 @@
         outline: none;
         border-color: #3b82f6;
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    /* Task assignment modal styles */
+    .task-assignment-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 1rem;
+    }
+
+    .task-assignment-modal-content {
+        background: white;
+        border-radius: 1rem;
+        max-width: 500px;
+        width: 100%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    /* Attendance stats card */
+    .stats-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 2px solid #e5e7eb;
+        text-align: center;
+    }
+
+    .stats-number {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: #059669;
+    }
+
+    .stats-label {
+        font-size: 0.875rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+
+    /* Loading states */
+    .loading-spinner {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid #f3f4f6;
+        border-radius: 50%;
+        border-top-color: #3b82f6;
+        animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
     }
     </style>
 </head>
@@ -1009,16 +1053,15 @@
             </div>
         </header>
 
-        <!-- Navigation -->
         <!-- Student Navigation -->
         <nav id="studentNav" class="bg-white shadow-sm border-b hidden">
             <div class="container mx-auto px-2 md:px-4">
                 <div class="flex space-x-1 overflow-x-auto py-2">
-                    <button onclick="showPage('attendance')" class="nav-btn text-gray-700 hover:text-green-600 whitespace-nowrap">
-                        <i class="fas fa-calendar-check mr-1 md:mr-2"></i>Attendance
+                    <button onclick="showPage('attendance')" class="nav-btn text-gray-700 hover:text-green-600 whitespace-nowrap" id="navAttendance">
+                        <i class="fas fa-calendar-check mr-1 md:mr-2"></i>My Attendance
                     </button>
-                    <button onclick="showPage('status')" class="nav-btn text-gray-700 hover:text-green-600 whitespace-nowrap">
-                        <i class="fas fa-chart-line mr-1 md:mr-2"></i>Status
+                    <button onclick="showPage('status')" class="nav-btn text-gray-700 hover:text-green-600 whitespace-nowrap" id="navStatus">
+                        <i class="fas fa-chart-pie mr-1 md:mr-2"></i>Status
                     </button>
                 </div>
             </div>
@@ -1028,11 +1071,11 @@
         <nav id="adminNav" class="bg-white shadow-sm border-b hidden">
             <div class="container mx-auto px-2 md:px-4">
                 <div class="flex space-x-1 overflow-x-auto py-2">
-                    <button onclick="showPage('adminAttendance')" class="nav-btn text-gray-700 hover:text-blue-600 whitespace-nowrap">
+                    <button onclick="showPage('adminAttendance')" class="nav-btn text-gray-700 hover:text-blue-600 whitespace-nowrap" id="navAdminAttendance">
                         <i class="fas fa-user-check mr-1 md:mr-2"></i>Take Attendance
                     </button>
-                    <button onclick="showPage('adminStatus')" class="nav-btn text-gray-700 hover:text-blue-600 whitespace-nowrap">
-                        <i class="fas fa-chart-bar mr-1 md:mr-2"></i>All Status
+                    <button onclick="showPage('adminStatus')" class="nav-btn text-gray-700 hover:text-blue-600 whitespace-nowrap" id="navAdminStatus">
+                        <i class="fas fa-chart-pie mr-1 md:mr-2"></i>All Status
                     </button>
                 </div>
             </div>
@@ -1062,19 +1105,22 @@
                 <div class="bg-white rounded-lg shadow-lg p-3 md:p-6">
                     <h2 class="text-xl md:text-2xl font-bold text-green-600 mb-4 md:mb-6">My Attendance Status</h2>
                     
-                    <!-- Attendance Overview Chart -->
+                    <!-- Overall Attendance Pie Chart -->
                     <div class="bg-gray-50 rounded-lg p-3 md:p-6 mb-4 md:mb-6">
-                        <h3 class="text-base md:text-lg font-semibold text-gray-800 mb-3 md:mb-4">Overall Attendance</h3>
+                        <h3 class="text-base md:text-lg font-semibold text-gray-800 mb-3 md:mb-4 text-center">Overall Attendance Overview</h3>
                         <div class="chart-container">
-                            <canvas id="attendanceChart"></canvas>
+                            <canvas id="overallAttendanceChart"></canvas>
+                        </div>
+                        <div id="overallStats" class="grid grid-cols-2 gap-4 mt-4">
+                            <!-- Stats will be loaded here -->
                         </div>
                     </div>
 
-                    <!-- Subject-wise Attendance Summary -->
+                    <!-- Subject-wise Pie Charts -->
                     <div class="bg-gray-50 rounded-lg p-3 md:p-6">
-                        <h3 class="text-base md:text-lg font-semibold text-gray-800 mb-3 md:mb-4">Subject-wise Attendance</h3>
-                        <div id="subjectAttendanceSummary" class="attendance-summary-grid">
-                            <!-- Subject attendance summary will be loaded here -->
+                        <h3 class="text-base md:text-lg font-semibold text-gray-800 mb-3 md:mb-4 text-center">Subject-wise Attendance</h3>
+                        <div id="subjectPieCharts" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <!-- Subject pie charts will be loaded here -->
                         </div>
                     </div>
                 </div>
@@ -1192,19 +1238,22 @@
                             <p class="text-blue-700 text-sm md:text-base" id="selectedUserInfo">-</p>
                         </div>
 
-                        <!-- Attendance Chart -->
-                        <div class="bg-gray-50 rounded-lg p-3 md:p-4 mb-4 md:mb-6">
-                            <h3 class="text-base md:text-lg font-bold mb-3 md:mb-4 text-blue-600">Attendance Overview</h3>
+                        <!-- Overall Attendance Pie Chart -->
+                        <div class="bg-gray-50 rounded-lg p-3 md:p-6 mb-4 md:mb-6">
+                            <h3 class="text-base md:text-lg font-bold mb-3 md:mb-4 text-blue-600 text-center">Overall Attendance Overview</h3>
                             <div class="chart-container">
-                                <canvas id="adminAttendanceChart"></canvas>
+                                <canvas id="adminOverallAttendanceChart"></canvas>
+                            </div>
+                            <div id="adminOverallStats" class="grid grid-cols-2 gap-4 mt-4">
+                                <!-- Stats will be loaded here -->
                             </div>
                         </div>
 
-                        <!-- Subject-wise Attendance -->
-                        <div class="bg-gray-50 rounded-lg p-3 md:p-4">
-                            <h3 class="text-base md:text-lg font-bold mb-3 md:mb-4 text-blue-600">Subject-wise Attendance</h3>
-                            <div id="adminSubjectAttendanceSummary" class="attendance-summary-grid">
-                                <!-- Subject attendance will be loaded here -->
+                        <!-- Subject-wise Pie Charts -->
+                        <div class="bg-gray-50 rounded-lg p-3 md:p-6">
+                            <h3 class="text-base md:text-lg font-bold mb-3 md:mb-4 text-blue-600 text-center">Subject-wise Attendance</h3>
+                            <div id="adminSubjectPieCharts" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <!-- Subject pie charts will be loaded here -->
                             </div>
                         </div>
                     </div>
