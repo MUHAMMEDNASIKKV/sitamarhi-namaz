@@ -3,6 +3,8 @@ let currentUser = null;
 let currentPage = 'attendance';
 let chartInstances = {};
 let adminChartInstances = {};
+let adminSubjectChartInstances = {};
+let studentSubjectChartInstances = {};
 let today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
 
 // =============================
@@ -10,7 +12,7 @@ let today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
 // =============================
 class GoogleSheetsAPI {
     constructor() {
-        this.apiUrl = "https://script.google.com/macros/s/AKfycbwrCaXrd1CSSYIB7xNL1oqxObxjFbo7NulcIeUrENJvUhCsrnS7bhrYYJfHYsmkNSDRuw/exec";
+        this.apiUrl = "https://script.google.com/macros/s/AKfycby0LNXNasWsBih_JTSmemzQ67lAMb84h93H6WNpIVagfITYnx62vp00xcWYpO15C4Fevw/exec";
         this.cache = new Map();
         this.localCache = this.initLocalCache();
         this.cacheTimeout = 30 * 1000; // 30 seconds
@@ -237,8 +239,6 @@ async function login() {
             if (currentUser.role === 'admin') {
                 document.getElementById('studentNav').classList.add('hidden');
                 document.getElementById('adminNav').classList.remove('hidden');
-                
-                // Set today's date for attendance
                 document.getElementById('attendanceDate').value = today;
                 
                 Promise.all([
@@ -281,15 +281,11 @@ function logout() {
     currentUser = null;
     api.clearCache();
     
-    Object.values(chartInstances).forEach(chart => {
-        if (chart) chart.destroy();
-    });
-    chartInstances = {};
-    
-    Object.values(adminChartInstances).forEach(chart => {
-        if (chart) chart.destroy();
-    });
-    adminChartInstances = {};
+    // Destroy all chart instances
+    destroyAllCharts(chartInstances);
+    destroyAllCharts(adminChartInstances);
+    destroyAllCharts(studentSubjectChartInstances);
+    destroyAllCharts(adminSubjectChartInstances);
     
     document.getElementById('loginPage').classList.remove('hidden');
     document.getElementById('dashboardContainer').classList.add('hidden');
@@ -297,6 +293,15 @@ function logout() {
     document.getElementById('password').value = '';
     hideError();
     showLogin();
+}
+
+function destroyAllCharts(chartObj) {
+    Object.values(chartObj).forEach(chart => {
+        if (chart && chart.destroy) {
+            chart.destroy();
+        }
+    });
+    Object.keys(chartObj).forEach(key => delete chartObj[key]);
 }
 
 // Signup functions
@@ -395,23 +400,28 @@ async function submitSignup() {
 async function showPage(page) {
     document.querySelectorAll('.page-content').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.classList.remove('border-green-500', 'text-green-600', 'border-blue-500', 'text-blue-600');
-        btn.classList.add('border-transparent');
+        btn.classList.remove('active', 'border-green-500', 'text-green-600', 'border-blue-500', 'text-blue-600');
     });
 
     document.getElementById(page + 'Page').classList.remove('hidden');
     
-    const clickedBtn = Array.from(document.querySelectorAll('.nav-btn')).find(btn => {
-        const btnText = btn.textContent.toLowerCase();
-        return btnText.includes(page.replace('admin', '').toLowerCase()) || 
-               (page === 'adminStatus' && btnText.includes('all status'));
-    });
+    // Highlight active nav button
+    const navMap = {
+        'attendance': 'navAttendance',
+        'status': 'navStatus',
+        'adminAttendance': 'navAdminAttendance',
+        'adminStatus': 'navAdminStatus'
+    };
     
-    if (clickedBtn) {
-        if (currentUser && currentUser.role === 'admin') {
-            clickedBtn.classList.add('border-blue-500', 'text-blue-600');
-        } else {
-            clickedBtn.classList.add('border-green-500', 'text-green-600');
+    const activeNavId = navMap[page];
+    if (activeNavId) {
+        const navBtn = document.getElementById(activeNavId);
+        if (navBtn) {
+            if (currentUser && currentUser.role === 'admin') {
+                navBtn.classList.add('active', 'border-blue-500', 'text-blue-600');
+            } else {
+                navBtn.classList.add('active', 'border-green-500', 'text-green-600');
+            }
         }
     }
 
@@ -459,7 +469,6 @@ async function loadAttendance() {
         
         document.getElementById('userClassAttendance').textContent = `Class ${currentUser.class}`;
         
-        // Load attendance data
         const attendanceSheet = `${currentUser.username}_attendance`;
         const attendance = await api.getSheet(attendanceSheet);
         
@@ -499,8 +508,10 @@ async function loadAttendance() {
             const subjectCard = document.createElement('div');
             subjectCard.className = 'subject-card';
             
+            const safeSubject = subject.replace(/[^a-zA-Z0-9]/g, '_');
+            
             subjectCard.innerHTML = `
-                <div class="subject-header" onclick="toggleSubjectAttendance('${subject.replace(/[^a-zA-Z0-9]/g, '_')}')">
+                <div class="subject-header" onclick="toggleSubjectAttendance('${safeSubject}')">
                     <div class="flex items-center min-w-0 flex-1">
                         <div class="subject-icon">
                             <i class="${getSubjectIcon(subject)}"></i>
@@ -514,11 +525,11 @@ async function loadAttendance() {
                         <span class="attendance-badge ${percentage >= 75 ? 'present-badge' : 'absent-badge'}">
                             ${percentage}%
                         </span>
-                        <i class="fas fa-chevron-down expand-arrow" id="arrow-${subject.replace(/[^a-zA-Z0-9]/g, '_')}"></i>
+                        <i class="fas fa-chevron-down expand-arrow" id="arrow-${safeSubject}"></i>
                     </div>
                 </div>
                 
-                <div class="attendance-container" id="attendance-${subject.replace(/[^a-zA-Z0-9]/g, '_')}">
+                <div class="attendance-container" id="attendance-${safeSubject}">
                     ${records.map(record => `
                         <div class="attendance-record">
                             <div class="flex items-center justify-between">
@@ -574,36 +585,54 @@ async function loadStatusCharts() {
         const attendance = await api.getSheet(attendanceSheet);
         
         await Promise.all([
-            loadAttendanceChart(attendance),
-            loadSubjectAttendanceSummary(attendance)
+            loadOverallAttendancePieChart(attendance, 'overallAttendanceChart', 'overallStats', chartInstances, 'overallAttendance'),
+            loadSubjectPieCharts(attendance, 'subjectPieCharts', studentSubjectChartInstances)
         ]);
     } catch (error) {
         console.error('Error loading status charts:', error);
     }
 }
 
-async function loadAttendanceChart(attendance) {
+async function loadOverallAttendancePieChart(attendance, canvasId, statsId, chartsObj, chartKey) {
     try {
         const presentCount = Array.isArray(attendance) ? 
             attendance.filter(a => a.status === 'present').length : 0;
         const absentCount = Array.isArray(attendance) ? 
             attendance.filter(a => a.status === 'absent').length : 0;
+        const totalCount = presentCount + absentCount;
+        const percentage = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0;
 
-        const ctx = document.getElementById('attendanceChart');
+        // Update stats
+        const statsContainer = document.getElementById(statsId);
+        if (statsContainer) {
+            statsContainer.innerHTML = `
+                <div class="stats-card">
+                    <div class="stats-number text-green-600">${presentCount}</div>
+                    <div class="stats-label">Present Days</div>
+                </div>
+                <div class="stats-card">
+                    <div class="stats-number text-red-600">${absentCount}</div>
+                    <div class="stats-label">Absent Days</div>
+                </div>
+            `;
+        }
+
+        const ctx = document.getElementById(canvasId);
         if (!ctx) return;
         
-        if (chartInstances.attendanceChart) {
-            chartInstances.attendanceChart.destroy();
+        if (chartsObj[chartKey]) {
+            chartsObj[chartKey].destroy();
         }
         
-        chartInstances.attendanceChart = new Chart(ctx.getContext('2d'), {
-            type: 'doughnut',
+        chartsObj[chartKey] = new Chart(ctx.getContext('2d'), {
+            type: 'pie',
             data: {
                 labels: ['Present', 'Absent'],
                 datasets: [{
                     data: [presentCount, absentCount],
-                    backgroundColor: ['#059669', '#ef4444'],
-                    borderWidth: 0
+                    backgroundColor: ['#10b981', '#ef4444'],
+                    borderColor: ['#059669', '#dc2626'],
+                    borderWidth: 2
                 }]
             },
             options: {
@@ -611,59 +640,132 @@ async function loadAttendanceChart(attendance) {
                 maintainAspectRatio: false,
                 plugins: {
                     legend: {
-                        position: 'bottom'
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            font: {
+                                size: 14
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                return `${label}: ${value} (${percentage}%)`;
+                            }
+                        }
                     }
                 }
             }
         });
     } catch (error) {
-        console.error('Error loading attendance chart:', error);
+        console.error('Error loading overall attendance pie chart:', error);
     }
 }
 
-async function loadSubjectAttendanceSummary(attendance) {
+async function loadSubjectPieCharts(attendance, containerId, chartsObj) {
     try {
-        const subjectStats = {};
-        
-        if (Array.isArray(attendance)) {
-            attendance.forEach(record => {
-                const subject = record.subject || 'General';
-                if (!subjectStats[subject]) {
-                    subjectStats[subject] = { present: 0, total: 0 };
-                }
-                
-                subjectStats[subject].total++;
-                if (record.status === 'present') {
-                    subjectStats[subject].present++;
-                }
-            });
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        // Destroy existing charts
+        Object.values(chartsObj).forEach(chart => {
+            if (chart && chart.destroy) chart.destroy();
+        });
+        Object.keys(chartsObj).forEach(key => delete chartsObj[key]);
+
+        if (!Array.isArray(attendance) || attendance.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-center col-span-full py-8">No attendance data available</p>';
+            return;
         }
+
+        // Group by subject
+        const subjectStats = {};
+        attendance.forEach(record => {
+            const subject = record.subject || 'General';
+            if (!subjectStats[subject]) {
+                subjectStats[subject] = { present: 0, absent: 0 };
+            }
+            if (record.status === 'present') {
+                subjectStats[subject].present++;
+            } else {
+                subjectStats[subject].absent++;
+            }
+        });
+
+        const subjects = Object.keys(subjectStats);
         
-        const summaryContainer = document.getElementById('subjectAttendanceSummary');
-        if (!summaryContainer) return;
-        
-        const summaryHtml = Object.entries(subjectStats).map(([subject, stats]) => {
-            const percentage = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0;
-            return `
-                <div class="attendance-summary-card">
+        if (subjects.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-center col-span-full py-8">No attendance data available</p>';
+            return;
+        }
+
+        let html = '';
+        subjects.forEach((subject, index) => {
+            const stats = subjectStats[subject];
+            const total = stats.present + stats.absent;
+            const percentage = total > 0 ? Math.round((stats.present / total) * 100) : 0;
+            const canvasId = `subjectChart-${index}-${Date.now()}`;
+            
+            html += `
+                <div class="bg-white rounded-lg p-4 border-2 border-gray-200">
                     <div class="flex items-center justify-center mb-3">
-                        <div class="w-6 h-6 md:w-8 md:h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center text-white mr-2">
-                            <i class="${getSubjectIcon(subject)} text-xs md:text-sm"></i>
+                        <div class="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center text-white mr-2">
+                            <i class="${getSubjectIcon(subject)} text-sm"></i>
                         </div>
-                        <h4>${subject}</h4>
+                        <h4 class="font-semibold text-gray-800">${subject}</h4>
                     </div>
-                    <div class="attendance-percentage">${percentage}%</div>
-                    <div class="text-xs text-gray-500 mt-2">
-                        ${stats.present}/${stats.total} classes attended
+                    <div class="chart-container-small mx-auto">
+                        <canvas id="${canvasId}"></canvas>
+                    </div>
+                    <div class="text-center mt-3">
+                        <span class="text-lg font-bold ${percentage >= 75 ? 'text-green-600' : 'text-red-600'}">${percentage}%</span>
+                        <p class="text-xs text-gray-500">${stats.present}/${total} present</p>
                     </div>
                 </div>
             `;
-        }).join('');
-        
-        summaryContainer.innerHTML = summaryHtml || '<p class="text-gray-500 text-center col-span-full">No attendance data available</p>';
+            
+            // Create chart after DOM update
+            setTimeout(() => {
+                const ctx = document.getElementById(canvasId);
+                if (ctx) {
+                    chartsObj[canvasId] = new Chart(ctx.getContext('2d'), {
+                        type: 'pie',
+                        data: {
+                            labels: ['Present', 'Absent'],
+                            datasets: [{
+                                data: [stats.present, stats.absent],
+                                backgroundColor: ['#10b981', '#ef4444'],
+                                borderColor: ['#059669', '#dc2626'],
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            }
+                        }
+                    });
+                }
+            }, 100);
+        });
+
+        container.innerHTML = html;
         
     } catch (error) {
-        console.error('Error loading subject attendance summary:', error);
+        console.error('Error loading subject pie charts:', error);
+        const container = document.getElementById(containerId);
+        if (container) {
+            container.innerHTML = '<p class="text-red-500 text-center col-span-full py-8">Error loading charts</p>';
+        }
     }
 }
 
@@ -806,11 +908,9 @@ async function loadAdminAttendanceView(classNum, subject, date) {
         document.getElementById('selectedAttendanceInfo').textContent = 
             `Class ${classNum} - ${subject.charAt(0).toUpperCase() + subject.slice(1)} - ${formatDate(date)}`;
         
-        // Load existing attendance for this date
         const attendanceSheet = `attendance_${classNum}_${subject}`;
         const existingAttendance = await api.getSheet(attendanceSheet);
         
-        // Create a map of existing attendance for this date
         const existingMap = new Map();
         if (Array.isArray(existingAttendance)) {
             existingAttendance.forEach(record => {
@@ -820,7 +920,6 @@ async function loadAdminAttendanceView(classNum, subject, date) {
             });
         }
         
-        // Load students
         const users = await api.getSheet("user_credentials");
         const adminStudentsList = document.getElementById('adminStudentsList');
         
@@ -857,7 +956,7 @@ async function loadAdminAttendanceView(classNum, subject, date) {
                                id="check-${student.username}" 
                                ${isPresent ? 'checked' : ''} 
                                onclick="event.stopPropagation(); toggleStudentSelection('${student.username}')">
-                        <label for="check-${student.username}" class="ml-2 text-sm font-medium">
+                        <label for="check-${student.username}">
                             ${isPresent ? 'Present' : 'Absent'}
                         </label>
                     </div>
@@ -926,12 +1025,10 @@ async function submitAttendance() {
     
     try {
         const attendanceSheet = `attendance_${selectedClass}_${selectedSubject}`;
-        const studentAttendanceSheet = `${currentUser.username}_attendance`;
         
-        // Collect all student attendance data
         const checkboxes = document.querySelectorAll('#adminStudentsList input[type="checkbox"]');
         const attendanceRows = [];
-        const studentAttendanceRows = [];
+        const studentAttendanceMap = new Map();
         
         checkboxes.forEach(checkbox => {
             const username = checkbox.id.replace('check-', '');
@@ -940,17 +1037,20 @@ async function submitAttendance() {
             // Class attendance sheet row
             attendanceRows.push([selectedDate, username, status, selectedSubject]);
             
-            // Individual student attendance sheet row
-            studentAttendanceRows.push([selectedDate, selectedSubject, status]);
+            // Collect for individual student sheets
+            if (!studentAttendanceMap.has(username)) {
+                studentAttendanceMap.set(username, []);
+            }
+            studentAttendanceMap.get(username).push([selectedDate, selectedSubject, status]);
         });
         
         // Save to class attendance sheet
         await api.addBatchRows(attendanceSheet, attendanceRows);
         
         // Save to individual student attendance sheets
-        // Note: This would require iterating through each student, which is complex with batch
-        // For simplicity, we'll save to admin's tracking sheet
-        await api.addBatchRows(studentAttendanceSheet, studentAttendanceRows);
+        for (const [username, rows] of studentAttendanceMap) {
+            await api.addBatchRows(`${username}_attendance`, rows);
+        }
         
         alert('Attendance saved successfully!');
         
@@ -1024,6 +1124,17 @@ async function loadAllUsersStatus() {
 
 async function loadSelectedUserStatus(username) {
     try {
+        // Destroy existing admin charts
+        Object.values(adminChartInstances).forEach(chart => {
+            if (chart && chart.destroy) chart.destroy();
+        });
+        adminChartInstances = {};
+        
+        Object.values(adminSubjectChartInstances).forEach(chart => {
+            if (chart && chart.destroy) chart.destroy();
+        });
+        adminSubjectChartInstances = {};
+        
         const [users, attendance] = await Promise.all([
             api.getSheet("user_credentials"),
             api.getSheet(`${username}_attendance`)
@@ -1041,97 +1152,12 @@ async function loadSelectedUserStatus(username) {
             `Username: ${user.username} | Class: ${user.class || 'Not Assigned'} | Role: ${user.role}`;
         
         await Promise.all([
-            loadAdminAttendanceChart(attendance),
-            loadAdminSubjectAttendanceSummary(attendance)
+            loadOverallAttendancePieChart(attendance, 'adminOverallAttendanceChart', 'adminOverallStats', adminChartInstances, 'overallAttendance'),
+            loadSubjectPieCharts(attendance, 'adminSubjectPieCharts', adminSubjectChartInstances)
         ]);
         
     } catch (error) {
         console.error('Error loading selected user status:', error);
-    }
-}
-
-async function loadAdminAttendanceChart(attendance) {
-    try {
-        const presentCount = Array.isArray(attendance) ? 
-            attendance.filter(a => a.status === 'present').length : 0;
-        const absentCount = Array.isArray(attendance) ? 
-            attendance.filter(a => a.status === 'absent').length : 0;
-
-        const ctx = document.getElementById('adminAttendanceChart');
-        if (!ctx) return;
-        
-        if (adminChartInstances.attendanceChart) {
-            adminChartInstances.attendanceChart.destroy();
-        }
-        
-        adminChartInstances.attendanceChart = new Chart(ctx.getContext('2d'), {
-            type: 'doughnut',
-            data: {
-                labels: ['Present', 'Absent'],
-                datasets: [{
-                    data: [presentCount, absentCount],
-                    backgroundColor: ['#059669', '#ef4444'],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom'
-                    }
-                }
-            }
-        });
-    } catch (error) {
-        console.error('Error loading admin attendance chart:', error);
-    }
-}
-
-async function loadAdminSubjectAttendanceSummary(attendance) {
-    try {
-        const subjectStats = {};
-        
-        if (Array.isArray(attendance)) {
-            attendance.forEach(record => {
-                const subject = record.subject || 'General';
-                if (!subjectStats[subject]) {
-                    subjectStats[subject] = { present: 0, total: 0 };
-                }
-                
-                subjectStats[subject].total++;
-                if (record.status === 'present') {
-                    subjectStats[subject].present++;
-                }
-            });
-        }
-        
-        const summaryContainer = document.getElementById('adminSubjectAttendanceSummary');
-        if (!summaryContainer) return;
-        
-        const summaryHtml = Object.entries(subjectStats).map(([subject, stats]) => {
-            const percentage = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0;
-            return `
-                <div class="attendance-summary-card">
-                    <div class="flex items-center justify-center mb-3">
-                        <div class="w-6 h-6 md:w-8 md:h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white mr-2">
-                            <i class="${getSubjectIcon(subject)} text-xs md:text-sm"></i>
-                        </div>
-                        <h4>${subject}</h4>
-                    </div>
-                    <div class="attendance-percentage">${percentage}%</div>
-                    <div class="text-xs text-gray-500 mt-2">
-                        ${stats.present}/${stats.total} classes attended
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-        summaryContainer.innerHTML = summaryHtml || '<p class="text-gray-500 text-center col-span-full">No attendance data available</p>';
-        
-    } catch (error) {
-        console.error('Error loading admin subject attendance summary:', error);
     }
 }
 
@@ -1195,11 +1221,8 @@ async function changePassword(event) {
         
         const user = users.find(u => {
             if (!u.username || !u.password) return false;
-            const storedUsername = String(u.username).toLowerCase().trim();
-            const currentUsername = String(currentUser.username).toLowerCase().trim();
-            const inputPassword = String(currentPassword).trim();
-            const storedPassword = String(u.password).trim();
-            return storedUsername === currentUsername && storedPassword === inputPassword;
+            return String(u.username).toLowerCase().trim() === String(currentUser.username).toLowerCase().trim() && 
+                   String(u.password).trim() === String(currentPassword).trim();
         });
         
         if (!user) {
@@ -1300,7 +1323,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Set today's date as default for attendance
     document.getElementById('attendanceDate').value = today;
     document.getElementById('attendanceDate').addEventListener('change', function() {
         const selectedClass = document.getElementById('adminClassSelect').value;
@@ -1316,16 +1338,15 @@ let resizeTimeout;
 window.addEventListener('resize', function() {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(function() {
-        if (currentPage === 'status') {
-            Object.values(chartInstances).forEach(chart => {
-                if (chart) chart.resize();
-            });
-        }
-        if (currentPage === 'adminStatus') {
-            Object.values(adminChartInstances).forEach(chart => {
-                if (chart) chart.resize();
-            });
-        }
+        const allCharts = {
+            ...chartInstances,
+            ...adminChartInstances,
+            ...studentSubjectChartInstances,
+            ...adminSubjectChartInstances
+        };
+        Object.values(allCharts).forEach(chart => {
+            if (chart && chart.resize) chart.resize();
+        });
     }, 250);
 });
 
@@ -1355,3 +1376,4 @@ function initializeApp() {
 }
 
 console.log('%c📅 QUAF Attendance System Loaded Successfully! 📅', 'color: #059669; font-size: 16px; font-weight: bold;');
+console.log('%cAttendance Management System with Pie Charts', 'color: #1e40af; font-size: 12px;');
