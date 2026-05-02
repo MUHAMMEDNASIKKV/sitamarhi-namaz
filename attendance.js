@@ -10,7 +10,7 @@ let today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
 // =============================
 class GoogleSheetsAPI {
     constructor() {
-        this.apiUrl = "https://script.google.com/macros/s/AKfycbx6cwF3LVu72wDfyc2zThBMypDBlxN-N2g5PvbVt4IGhzqSqvD63XGbBadEu-3Npx_wYg/exec";
+        this.apiUrl = "https://script.google.com/macros/s/AKfycbwrCaXrd1CSSYIB7xNL1oqxObxjFbo7NulcIeUrENJvUhCsrnS7bhrYYJfHYsmkNSDRuw/exec";
         this.cache = new Map();
         this.localCache = this.initLocalCache();
         this.cacheTimeout = 30 * 1000; // 30 seconds
