@@ -3,19 +3,19 @@ let currentUser = null;
 let currentPage = 'attendance';
 let chartInstances = {};
 let adminChartInstances = {};
-let adminSubjectChartInstances = {};
 let studentSubjectChartInstances = {};
-let today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+let adminSubjectChartInstances = {};
+let today = new Date().toISOString().split('T')[0];
 
 // =============================
 // 📊 Google Sheets Integration
 // =============================
 class GoogleSheetsAPI {
     constructor() {
-        this.apiUrl = "https://script.google.com/macros/s/AKfycby0LNXNasWsBih_JTSmemzQ67lAMb84h93H6WNpIVagfITYnx62vp00xcWYpO15C4Fevw/exec";
+        this.apiUrl = "https://script.google.com/macros/s/AKfycbxCi--o1iMHyLI5aY2NEEj0iEKjES0gPCMEWByqTU_0kgtSl5EmxFzFkM1nlAD4P8U8MA/exec";
         this.cache = new Map();
         this.localCache = this.initLocalCache();
-        this.cacheTimeout = 30 * 1000; // 30 seconds
+        this.cacheTimeout = 30 * 1000;
     }
 
     initLocalCache() {
@@ -77,16 +77,6 @@ class GoogleSheetsAPI {
             console.error(`Error fetching ${sheetName}:`, error);
             return { error: error.message };
         }
-    }
-
-    async getBatchSheets(sheetNames) {
-        const promises = sheetNames.map(name => this.getSheet(name));
-        const results = await Promise.all(promises);
-        const batchResult = {};
-        sheetNames.forEach((name, index) => {
-            batchResult[name] = results[index];
-        });
-        return batchResult;
     }
 
     clearCache() {
@@ -281,7 +271,6 @@ function logout() {
     currentUser = null;
     api.clearCache();
     
-    // Destroy all chart instances
     destroyAllCharts(chartInstances);
     destroyAllCharts(adminChartInstances);
     destroyAllCharts(studentSubjectChartInstances);
@@ -304,7 +293,6 @@ function destroyAllCharts(chartObj) {
     Object.keys(chartObj).forEach(key => delete chartObj[key]);
 }
 
-// Signup functions
 function showSignup() {
     document.getElementById('loginSection').classList.add('hidden');
     document.getElementById('signupSection').classList.remove('hidden');
@@ -405,7 +393,6 @@ async function showPage(page) {
 
     document.getElementById(page + 'Page').classList.remove('hidden');
     
-    // Highlight active nav button
     const navMap = {
         'attendance': 'navAttendance',
         'status': 'navStatus',
@@ -444,21 +431,7 @@ async function showPage(page) {
 async function loadAttendance() {
     const container = document.getElementById('subjectAttendanceCards');
     
-    container.innerHTML = `
-        <div class="animate-pulse space-y-4">
-            ${Array(3).fill(0).map(() => `
-                <div class="bg-white rounded-lg p-4 border-2 border-gray-200">
-                    <div class="flex items-center space-x-3">
-                        <div class="w-10 h-10 bg-gray-200 rounded-full"></div>
-                        <div class="flex-1">
-                            <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                            <div class="h-3 bg-gray-200 rounded w-1/2"></div>
-                        </div>
-                    </div>
-                </div>
-            `).join('')}
-        </div>
-    `;
+    container.innerHTML = generateSkeleton(3);
 
     try {
         if (!currentUser.class) {
@@ -469,34 +442,39 @@ async function loadAttendance() {
         
         document.getElementById('userClassAttendance').textContent = `Class ${currentUser.class}`;
         
-        const attendanceSheet = `${currentUser.username}_attendance`;
-        const attendance = await api.getSheet(attendanceSheet);
+        // Get all subject-based attendance sheets for this class
+        const subjects = await getStudentSubjects();
         
-        if (!attendance || attendance.error || attendance.length === 0) {
+        if (!subjects || subjects.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-center py-8">No subjects found for your class.</p>';
+            return;
+        }
+        
+        // Load attendance data from all subject sheets
+        const attendanceBySubject = {};
+        
+        for (const subject of subjects) {
+            const sheetName = `attendance_${currentUser.class}_${subject}`;
+            const attendance = await api.getSheet(sheetName);
+            
+            if (Array.isArray(attendance) && attendance.length > 0) {
+                // Filter records for this student
+                const studentRecords = attendance.filter(r => 
+                    r.username === currentUser.username
+                );
+                
+                if (studentRecords.length > 0) {
+                    attendanceBySubject[subject] = studentRecords.sort((a, b) => 
+                        new Date(b.date) - new Date(a.date)
+                    );
+                }
+            }
+        }
+
+        if (Object.keys(attendanceBySubject).length === 0) {
             container.innerHTML = '<p class="text-gray-500 text-center py-8">No attendance records found.</p>';
             return;
         }
-
-        // Group attendance by subject
-        const attendanceBySubject = {};
-        
-        attendance.forEach(record => {
-            const subject = record.subject || 'General';
-            if (!attendanceBySubject[subject]) {
-                attendanceBySubject[subject] = [];
-            }
-            
-            attendanceBySubject[subject].push({
-                date: record.date,
-                status: record.status || 'absent',
-                subject: subject
-            });
-        });
-
-        // Sort records by date (newest first)
-        Object.keys(attendanceBySubject).forEach(subject => {
-            attendanceBySubject[subject].sort((a, b) => new Date(b.date) - new Date(a.date));
-        });
 
         const fragment = document.createDocumentFragment();
 
@@ -554,6 +532,36 @@ async function loadAttendance() {
     }
 }
 
+async function getStudentSubjects() {
+    // Get subjects from admin's assignment for this class
+    if (currentUser.adminSubjects) {
+        return Object.values(currentUser.adminSubjects).flat();
+    }
+    
+    // Fallback: get subjects from all users with same class
+    try {
+        const users = await api.getSheet("user_credentials");
+        if (Array.isArray(users)) {
+            const classUser = users.find(u => 
+                u.role === 'student' && 
+                u.subjects && 
+                String(u.class) === String(currentUser.class)
+            );
+            if (classUser && classUser.subjects) {
+                const subjectsStr = classUser.subjects.toString();
+                return subjectsStr.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+            }
+        }
+    } catch (e) {
+        console.error('Error getting subjects:', e);
+    }
+    
+    // Default subjects
+    return ['quaf', 'arabic_wing', 'urdu_wing', 'english_wing', 'malayalam_wing', 
+            'media_wing', 'sigma_wing', 'art_wing', 'oration_wing', 'gk_wing', 
+            'himaya_wing', 'class', 'swalah'];
+}
+
 function toggleSubjectAttendance(subject) {
     const container = document.getElementById(`attendance-${subject}`);
     const arrow = document.getElementById(`arrow-${subject}`);
@@ -581,12 +589,25 @@ function toggleSubjectAttendance(subject) {
 // =============================
 async function loadStatusCharts() {
     try {
-        const attendanceSheet = `${currentUser.username}_attendance`;
-        const attendance = await api.getSheet(attendanceSheet);
+        const subjects = await getStudentSubjects();
+        let allAttendance = [];
+        
+        // Load all subject attendance data
+        for (const subject of subjects) {
+            const sheetName = `attendance_${currentUser.class}_${subject}`;
+            const attendance = await api.getSheet(sheetName);
+            
+            if (Array.isArray(attendance)) {
+                const studentRecords = attendance.filter(r => 
+                    r.username === currentUser.username
+                );
+                allAttendance = allAttendance.concat(studentRecords);
+            }
+        }
         
         await Promise.all([
-            loadOverallAttendancePieChart(attendance, 'overallAttendanceChart', 'overallStats', chartInstances, 'overallAttendance'),
-            loadSubjectPieCharts(attendance, 'subjectPieCharts', studentSubjectChartInstances)
+            loadOverallAttendancePieChart(allAttendance, 'overallAttendanceChart', 'overallStats', chartInstances, 'overallAttendance'),
+            loadSubjectPieCharts(allAttendance, 'subjectPieCharts', studentSubjectChartInstances)
         ]);
     } catch (error) {
         console.error('Error loading status charts:', error);
@@ -599,19 +620,16 @@ async function loadOverallAttendancePieChart(attendance, canvasId, statsId, char
             attendance.filter(a => a.status === 'present').length : 0;
         const absentCount = Array.isArray(attendance) ? 
             attendance.filter(a => a.status === 'absent').length : 0;
-        const totalCount = presentCount + absentCount;
-        const percentage = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0;
 
-        // Update stats
         const statsContainer = document.getElementById(statsId);
         if (statsContainer) {
             statsContainer.innerHTML = `
                 <div class="stats-card">
-                    <div class="stats-number text-green-600">${presentCount}</div>
+                    <div class="stats-number">${presentCount}</div>
                     <div class="stats-label">Present Days</div>
                 </div>
                 <div class="stats-card">
-                    <div class="stats-number text-red-600">${absentCount}</div>
+                    <div class="stats-number red">${absentCount}</div>
                     <div class="stats-label">Absent Days</div>
                 </div>
             `;
@@ -643,9 +661,7 @@ async function loadOverallAttendancePieChart(attendance, canvasId, statsId, char
                         position: 'bottom',
                         labels: {
                             padding: 20,
-                            font: {
-                                size: 14
-                            }
+                            font: { size: 14 }
                         }
                     },
                     tooltip: {
@@ -672,18 +688,13 @@ async function loadSubjectPieCharts(attendance, containerId, chartsObj) {
         const container = document.getElementById(containerId);
         if (!container) return;
 
-        // Destroy existing charts
-        Object.values(chartsObj).forEach(chart => {
-            if (chart && chart.destroy) chart.destroy();
-        });
-        Object.keys(chartsObj).forEach(key => delete chartsObj[key]);
+        destroyAllCharts(chartsObj);
 
         if (!Array.isArray(attendance) || attendance.length === 0) {
             container.innerHTML = '<p class="text-gray-500 text-center col-span-full py-8">No attendance data available</p>';
             return;
         }
 
-        // Group by subject
         const subjectStats = {};
         attendance.forEach(record => {
             const subject = record.subject || 'General';
@@ -705,11 +716,14 @@ async function loadSubjectPieCharts(attendance, containerId, chartsObj) {
         }
 
         let html = '';
+        const chartIds = [];
+        
         subjects.forEach((subject, index) => {
             const stats = subjectStats[subject];
             const total = stats.present + stats.absent;
             const percentage = total > 0 ? Math.round((stats.present / total) * 100) : 0;
             const canvasId = `subjectChart-${index}-${Date.now()}`;
+            chartIds.push({ canvasId, stats });
             
             html += `
                 <div class="bg-white rounded-lg p-4 border-2 border-gray-200">
@@ -728,9 +742,13 @@ async function loadSubjectPieCharts(attendance, containerId, chartsObj) {
                     </div>
                 </div>
             `;
-            
-            // Create chart after DOM update
-            setTimeout(() => {
+        });
+
+        container.innerHTML = html;
+        
+        // Create charts after DOM update
+        setTimeout(() => {
+            chartIds.forEach(({ canvasId, stats }) => {
                 const ctx = document.getElementById(canvasId);
                 if (ctx) {
                     chartsObj[canvasId] = new Chart(ctx.getContext('2d'), {
@@ -755,10 +773,8 @@ async function loadSubjectPieCharts(attendance, containerId, chartsObj) {
                         }
                     });
                 }
-            }, 100);
-        });
-
-        container.innerHTML = html;
+            });
+        }, 100);
         
     } catch (error) {
         console.error('Error loading subject pie charts:', error);
@@ -887,16 +903,7 @@ async function handleAdminSubjectChange() {
     const selectedDate = document.getElementById('attendanceDate').value;
     
     if (selectedClass && selectedSubject && selectedDate) {
-        const hasAccess = currentUser.adminSubjects && 
-                         currentUser.adminSubjects[selectedClass] && 
-                         currentUser.adminSubjects[selectedClass].includes(selectedSubject);
-        
-        if (hasAccess) {
-            await loadAdminAttendanceView(selectedClass, selectedSubject, selectedDate);
-        } else {
-            alert('Access denied: You are not assigned to this class-subject combination.');
-            this.value = '';
-        }
+        await loadAdminAttendanceView(selectedClass, selectedSubject, selectedDate);
     }
 }
 
@@ -908,6 +915,7 @@ async function loadAdminAttendanceView(classNum, subject, date) {
         document.getElementById('selectedAttendanceInfo').textContent = 
             `Class ${classNum} - ${subject.charAt(0).toUpperCase() + subject.slice(1)} - ${formatDate(date)}`;
         
+        // Load existing attendance for this class-subject
         const attendanceSheet = `attendance_${classNum}_${subject}`;
         const existingAttendance = await api.getSheet(attendanceSheet);
         
@@ -1024,35 +1032,26 @@ async function submitAttendance() {
     submitBtn.disabled = true;
     
     try {
+        // Save to subject-based sheet only
         const attendanceSheet = `attendance_${selectedClass}_${selectedSubject}`;
         
         const checkboxes = document.querySelectorAll('#adminStudentsList input[type="checkbox"]');
         const attendanceRows = [];
-        const studentAttendanceMap = new Map();
         
         checkboxes.forEach(checkbox => {
             const username = checkbox.id.replace('check-', '');
             const status = checkbox.checked ? 'present' : 'absent';
             
-            // Class attendance sheet row
             attendanceRows.push([selectedDate, username, status, selectedSubject]);
-            
-            // Collect for individual student sheets
-            if (!studentAttendanceMap.has(username)) {
-                studentAttendanceMap.set(username, []);
-            }
-            studentAttendanceMap.get(username).push([selectedDate, selectedSubject, status]);
         });
         
-        // Save to class attendance sheet
+        // Save to single subject-based attendance sheet
         await api.addBatchRows(attendanceSheet, attendanceRows);
         
-        // Save to individual student attendance sheets
-        for (const [username, rows] of studentAttendanceMap) {
-            await api.addBatchRows(`${username}_attendance`, rows);
-        }
+        alert(`Attendance saved successfully for ${attendanceRows.length} students!`);
         
-        alert('Attendance saved successfully!');
+        // Clear cache to refresh data on next load
+        api.clearCache();
         
     } catch (error) {
         console.error('Error submitting attendance:', error);
@@ -1124,22 +1123,10 @@ async function loadAllUsersStatus() {
 
 async function loadSelectedUserStatus(username) {
     try {
-        // Destroy existing admin charts
-        Object.values(adminChartInstances).forEach(chart => {
-            if (chart && chart.destroy) chart.destroy();
-        });
-        adminChartInstances = {};
+        destroyAllCharts(adminChartInstances);
+        destroyAllCharts(adminSubjectChartInstances);
         
-        Object.values(adminSubjectChartInstances).forEach(chart => {
-            if (chart && chart.destroy) chart.destroy();
-        });
-        adminSubjectChartInstances = {};
-        
-        const [users, attendance] = await Promise.all([
-            api.getSheet("user_credentials"),
-            api.getSheet(`${username}_attendance`)
-        ]);
-        
+        const users = await api.getSheet("user_credentials");
         const user = users.find(u => u.username === username);
         
         if (!user) {
@@ -1151,14 +1138,61 @@ async function loadSelectedUserStatus(username) {
         document.getElementById('selectedUserInfo').textContent = 
             `Username: ${user.username} | Class: ${user.class || 'Not Assigned'} | Role: ${user.role}`;
         
+        // Load all attendance data for this student from subject sheets
+        const subjects = await getUserSubjects(user);
+        let allAttendance = [];
+        
+        for (const subject of subjects) {
+            const sheetName = `attendance_${user.class}_${subject}`;
+            const attendance = await api.getSheet(sheetName);
+            
+            if (Array.isArray(attendance)) {
+                const studentRecords = attendance.filter(r => 
+                    r.username === username
+                );
+                allAttendance = allAttendance.concat(studentRecords);
+            }
+        }
+        
         await Promise.all([
-            loadOverallAttendancePieChart(attendance, 'adminOverallAttendanceChart', 'adminOverallStats', adminChartInstances, 'overallAttendance'),
-            loadSubjectPieCharts(attendance, 'adminSubjectPieCharts', adminSubjectChartInstances)
+            loadOverallAttendancePieChart(allAttendance, 'adminOverallAttendanceChart', 'adminOverallStats', adminChartInstances, 'overallAttendance'),
+            loadSubjectPieCharts(allAttendance, 'adminSubjectPieCharts', adminSubjectChartInstances)
         ]);
         
     } catch (error) {
         console.error('Error loading selected user status:', error);
     }
+}
+
+async function getUserSubjects(user) {
+    // Try to get subjects from user data
+    if (user.subjects) {
+        const subjectsStr = user.subjects.toString().trim();
+        // Try bracket format
+        const bracketMatch = subjectsStr.match(/\(\d+-([^)]+)\)/);
+        if (bracketMatch) {
+            const subjects = bracketMatch[1].toLowerCase();
+            if (subjects === 'all') {
+                return ['quaf', 'arabic_wing', 'urdu_wing', 'english_wing', 'malayalam_wing', 
+                        'media_wing', 'sigma_wing', 'art_wing', 'oration_wing', 'gk_wing', 
+                        'himaya_wing', 'class', 'swalah'];
+            }
+            return subjects.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+        }
+        // Simple comma-separated
+        return subjectsStr.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+    }
+    
+    // Fallback: get from admin's assignment
+    if (currentUser.adminSubjects && user.class) {
+        const classSubjects = currentUser.adminSubjects[user.class];
+        if (classSubjects) return classSubjects;
+    }
+    
+    // Default subjects
+    return ['quaf', 'arabic_wing', 'urdu_wing', 'english_wing', 'malayalam_wing', 
+            'media_wing', 'sigma_wing', 'art_wing', 'oration_wing', 'gk_wing', 
+            'himaya_wing', 'class', 'swalah'];
 }
 
 // =============================
@@ -1301,6 +1335,24 @@ function formatDate(dateString) {
     }
 }
 
+function generateSkeleton(count) {
+    return `
+        <div class="animate-pulse space-y-4">
+            ${Array(count).fill(0).map(() => `
+                <div class="bg-white rounded-lg p-4 border-2 border-gray-200">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-gray-200 rounded-full"></div>
+                        <div class="flex-1">
+                            <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                            <div class="h-3 bg-gray-200 rounded w-1/2"></div>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
 // =============================
 // 🎯 Event Listeners & Initialization
 // =============================
@@ -1333,7 +1385,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// Debounce resize events
 let resizeTimeout;
 window.addEventListener('resize', function() {
     clearTimeout(resizeTimeout);
@@ -1350,7 +1401,6 @@ window.addEventListener('resize', function() {
     }, 250);
 });
 
-// Security functions
 document.addEventListener("contextmenu", function (e) {
     e.preventDefault();
 });
@@ -1362,7 +1412,6 @@ document.addEventListener("keydown", function (e) {
     if (e.ctrlKey && (e.key === "s" || e.key === "S")) e.preventDefault();
 });
 
-// Initialize
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
@@ -1376,4 +1425,4 @@ function initializeApp() {
 }
 
 console.log('%c📅 QUAF Attendance System Loaded Successfully! 📅', 'color: #059669; font-size: 16px; font-weight: bold;');
-console.log('%cAttendance Management System with Pie Charts', 'color: #1e40af; font-size: 12px;');
+console.log('%cAttendance Management System - Subject-Based Sheets', 'color: #1e40af; font-size: 12px;');
