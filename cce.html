@@ -1129,6 +1129,31 @@
     .view-btn:hover {
         background: #047857;
     }
+
+    /* Admin edit points button styles */
+.edit-points-btn {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: white;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    white-space: nowrap;
+}
+
+.edit-points-btn:hover {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    transform: translateY(-1px);
+}
+
+.edit-points-btn:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+    transform: none;
+}
     </style>
 </head>
 <body>
@@ -1653,6 +1678,36 @@
             </div>
         </div>
     </div>
+
+    <!-- Edit Student Points Modal -->
+<div id="editPointsModal" class="task-assignment-modal hidden">
+    <div class="task-assignment-modal-content" style="max-width: 500px;">
+        <div class="p-4 md:p-6">
+            <div class="flex justify-between items-center mb-3 md:mb-4">
+                <h3 class="text-lg md:text-xl font-bold text-blue-600">Edit Task Points</h3>
+                <button onclick="closeEditPointsModal()" class="text-gray-500 hover:text-gray-700 p-1">
+                    <i class="fas fa-times text-lg md:text-xl"></i>
+                </button>
+            </div>
+            
+            <div id="editPointsContent">
+                <!-- Will be populated dynamically -->
+            </div>
+            
+            <div id="editPointsError" class="hidden bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm mb-4"></div>
+            <div id="editPointsSuccess" class="hidden bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-lg text-sm mb-4"></div>
+            
+            <div class="flex flex-col md:flex-row justify-end space-y-2 md:space-y-0 md:space-x-3 mt-4">
+                <button onclick="closeEditPointsModal()" class="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg font-semibold transition duration-300">
+                    Cancel
+                </button>
+                <button onclick="submitEditedPoints()" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-semibold transition duration-300">
+                    <i class="fas fa-save mr-2"></i>Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
     <script src="cce.js"></script>
 
