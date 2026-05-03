@@ -20,7 +20,7 @@ let dataCache = {
 // =============================
 class GoogleSheetsAPI {
     constructor() {
-        this.apiUrl = "https://script.google.com/macros/s/AKfycbxvFC_-nnfXLBrhOvUU_PWd3Mkq8dkGiSoIXJOv4etPVUTJr8qg0wB0zBR3RnMStyTx/exec";
+        this.apiUrl = "https://script.google.com/macros/s/AKfycbzWfGU1TX2oe-nNQpPEyHJFr3oOHowuAgtFq9pyNOMkBSHJdUl8FBt53Qd-YTM2f1x1/exec";
         this.cache = new Map();
         this.localCache = this.initLocalCache();
         this.cacheTimeout = 30 * 1000;
@@ -170,19 +170,28 @@ class GoogleSheetsAPI {
         }
     }
 
-    // Upload file to Google Drive and record link in sheet
+    // Updated uploadFile method - converts file to base64
     async uploadFile(username, taskId, file) {
         try {
-            const formData = new FormData();
-            formData.append('sheet', 'uploads');
-            formData.append('action', 'uploadFile');
-            formData.append('username', username);
-            formData.append('taskId', taskId);
-            formData.append('file', file);
+            // Convert file to base64
+            const base64Data = await this.fileToBase64(file);
+            
+            const payload = {
+                sheet: 'uploads',
+                action: 'uploadFile',
+                username: username,
+                taskId: taskId,
+                fileName: file.name,
+                fileType: file.type,
+                fileData: base64Data
+            };
             
             const response = await fetch(this.apiUrl, {
                 method: "POST",
-                body: formData
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                    data: JSON.stringify(payload)
+                })
             });
             
             const result = await response.json();
@@ -195,6 +204,20 @@ class GoogleSheetsAPI {
         } catch (error) {
             return { error: error.message };
         }
+    }
+
+    // Helper method to convert file to base64
+    fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                // Remove the data URL prefix (e.g., "data:application/pdf;base64,")
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = (error) => reject(error);
+        });
     }
 
     // Get uploads for a specific user
@@ -511,7 +534,7 @@ async function showPage(page) {
 }
 
 // =============================
-// 📤 File Upload Functions
+// 📤 File Upload Functions (FIXED)
 // =============================
 async function triggerFileUpload(taskId, taskTitle) {
     const input = document.createElement('input');
@@ -523,11 +546,13 @@ async function triggerFileUpload(taskId, taskTitle) {
         const file = e.target.files[0];
         if (!file) return;
         
-        if (file.type !== 'application/pdf') {
+        // Validate file type
+        if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
             alert('Please select a PDF file only.');
             return;
         }
         
+        // Validate file size (10MB max)
         if (file.size > 10 * 1024 * 1024) {
             alert('File size must be less than 10MB.');
             return;
@@ -547,6 +572,7 @@ async function uploadFileToTask(taskId, taskTitle, file) {
     
     // Show uploading state
     uploadBtnEl.disabled = true;
+    uploadBtnEl.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Uploading...';
     uploadStatusEl.innerHTML = `
         <span class="upload-status uploading">
             <i class="fas fa-spinner fa-spin mr-1"></i>Uploading...
@@ -556,10 +582,13 @@ async function uploadFileToTask(taskId, taskTitle, file) {
     try {
         const result = await api.uploadFile(currentUser.username, taskId, file);
         
+        console.log('Upload result:', result); // Debug log
+        
         if (result && result.success) {
             // Show success
             uploadBtnEl.classList.add('uploaded');
             uploadBtnEl.innerHTML = '<i class="fas fa-check mr-1"></i>Uploaded';
+            uploadBtnEl.disabled = true;
             uploadStatusEl.innerHTML = `
                 <span class="upload-status success">
                     <i class="fas fa-check-circle mr-1"></i>Uploaded successfully
@@ -571,7 +600,7 @@ async function uploadFileToTask(taskId, taskTitle, file) {
             
             showNotification('File uploaded successfully!', 'success');
         } else if (result && result.error === 'already_uploaded') {
-            alert('You have already uploaded a file for this task.');
+            alert('You have already uploaded a file for this task. Please contact admin to re-upload.');
             uploadStatusEl.innerHTML = `
                 <span class="upload-status error">
                     <i class="fas fa-exclamation-circle mr-1"></i>Already uploaded
@@ -581,11 +610,12 @@ async function uploadFileToTask(taskId, taskTitle, file) {
             uploadBtnEl.innerHTML = '<i class="fas fa-check mr-1"></i>Uploaded';
             uploadBtnEl.disabled = true;
         } else {
-            throw new Error(result?.error || 'Upload failed');
+            throw new Error(result?.error || 'Upload failed. Please try again.');
         }
     } catch (error) {
         console.error('Error uploading file:', error);
         uploadBtnEl.disabled = false;
+        uploadBtnEl.innerHTML = '<i class="fas fa-upload mr-1"></i>Upload PDF';
         uploadStatusEl.innerHTML = `
             <span class="upload-status error">
                 <i class="fas fa-exclamation-circle mr-1"></i>Error: ${error.message}
@@ -2326,30 +2356,10 @@ async function changePassword(event) {
     }
 }
 
-async function updateUserPassword(username, newPassword) {
-    try {
-        const rowData = [
-            username,
-            newPassword,
-            'password_update',
-            new Date().toISOString()
-        ];
-        
-        const result = await api.addRow("password_updates", rowData);
-        
-        return { success: true, message: 'Password update request submitted' };
-        
-    } catch (error) {
-        console.error('Error updating password:', error);
-        return { error: error.message };
-    }
-}
-
 function showChangePasswordError(message) {
     const errorDiv = document.getElementById('changePasswordError');
     errorDiv.textContent = message;
     errorDiv.classList.remove('hidden');
-    
     errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
@@ -2357,6 +2367,5 @@ function showChangePasswordSuccess(message) {
     const successDiv = document.getElementById('changePasswordSuccess');
     successDiv.textContent = message;
     successDiv.classList.remove('hidden');
-    
     successDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
