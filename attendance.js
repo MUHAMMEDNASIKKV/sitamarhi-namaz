@@ -6,39 +6,60 @@ let adminChartInstances = {};
 let studentSubjectChartInstances = {};
 let adminSubjectChartInstances = {};
 let today = new Date().toISOString().split('T')[0];
+let userCache = null;
+let userCacheTime = 0;
+const USER_CACHE_TIMEOUT = 60000; // 1 minute
 
 // =============================
-// 📊 Google Sheets Integration
+// 📊 Google Sheets Integration (OPTIMIZED)
 // =============================
 class GoogleSheetsAPI {
     constructor() {
         this.apiUrl = "https://script.google.com/macros/s/AKfycbxCi--o1iMHyLI5aY2NEEj0iEKjES0gPCMEWByqTU_0kgtSl5EmxFzFkM1nlAD4P8U8MA/exec";
         this.cache = new Map();
-        this.localCache = this.initLocalCache();
-        this.cacheTimeout = 30 * 1000;
+        this.pendingRequests = new Map(); // Prevent duplicate concurrent requests
+        this.cacheTimeout = 60000; // 1 minute cache
+        this.batchQueue = [];
+        this.batchTimer = null;
     }
 
-    initLocalCache() {
-        try {
-            const cached = localStorage.getItem('attendance_cache');
-            return cached ? JSON.parse(cached) : {};
-        } catch {
-            return {};
-        }
-    }
-
-    saveLocalCache() {
-        try {
-            localStorage.setItem('attendance_cache', JSON.stringify(this.localCache));
-        } catch (e) {
-            console.warn('Failed to save cache:', e);
-        }
+    // Batch multiple sheet requests into single API call
+    async getSheets(sheetNames) {
+        const results = {};
+        const toFetch = [];
+        
+        // Check cache first
+        sheetNames.forEach(name => {
+            const cached = this.cache.get(name);
+            if (cached && (Date.now() - cached.timestamp) < this.cacheTimeout) {
+                results[name] = cached.data;
+            } else {
+                toFetch.push(name);
+            }
+        });
+        
+        if (toFetch.length === 0) return results;
+        
+        // Fetch all uncached sheets in parallel
+        const fetchPromises = toFetch.map(name => this.getSheet(name, false));
+        const fetchedData = await Promise.allSettled(fetchPromises);
+        
+        fetchedData.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+                results[toFetch[index]] = result.value;
+            } else {
+                results[toFetch[index]] = { error: result.reason?.message || 'Failed to fetch' };
+            }
+        });
+        
+        return results;
     }
 
     async getSheet(sheetName, useCache = true) {
         const cacheKey = sheetName;
         const now = Date.now();
         
+        // Return cached data if valid
         if (useCache && this.cache.has(cacheKey)) {
             const cached = this.cache.get(cacheKey);
             if (now - cached.timestamp < this.cacheTimeout) {
@@ -46,20 +67,35 @@ class GoogleSheetsAPI {
             }
         }
         
-        if (useCache && this.localCache[cacheKey]) {
-            const cached = this.localCache[cacheKey];
-            if (now - cached.timestamp < 5 * 60 * 1000) {
-                this.cache.set(cacheKey, cached);
-                return cached.data;
-            }
+        // Prevent duplicate concurrent requests
+        if (this.pendingRequests.has(cacheKey)) {
+            return this.pendingRequests.get(cacheKey);
         }
-
+        
+        const requestPromise = this._fetchSheet(sheetName, cacheKey, now, useCache);
+        this.pendingRequests.set(cacheKey, requestPromise);
+        
+        try {
+            const result = await requestPromise;
+            return result;
+        } finally {
+            this.pendingRequests.delete(cacheKey);
+        }
+    }
+    
+    async _fetchSheet(sheetName, cacheKey, now, useCache) {
         try {
             const url = `${this.apiUrl}?sheet=${encodeURIComponent(sheetName)}&t=${now}`;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+            
             const response = await fetch(url, {
                 method: 'GET',
-                headers: { 'Accept': 'application/json' }
+                headers: { 'Accept': 'application/json' },
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             
@@ -68,8 +104,6 @@ class GoogleSheetsAPI {
             const cacheData = { data, timestamp: now };
             if (useCache) {
                 this.cache.set(cacheKey, cacheData);
-                this.localCache[cacheKey] = cacheData;
-                this.saveLocalCache();
             }
             
             return data;
@@ -81,29 +115,14 @@ class GoogleSheetsAPI {
 
     clearCache() {
         this.cache.clear();
-        this.localCache = {};
-        localStorage.removeItem('attendance_cache');
+        this.pendingRequests.clear();
     }
 
-    async addRow(sheetName, row) {
-        try {
-            const response = await fetch(this.apiUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: new URLSearchParams({
-                    sheet: sheetName,
-                    data: JSON.stringify(row)
-                })
-            });
-            
-            const result = await response.json();
-            this.cache.delete(sheetName);
-            delete this.localCache[sheetName];
-            this.saveLocalCache();
-            
-            return result;
-        } catch (error) {
-            return { error: error.message };
+    invalidateCache(pattern) {
+        for (const key of this.cache.keys()) {
+            if (key.includes(pattern)) {
+                this.cache.delete(key);
+            }
         }
     }
 
@@ -121,8 +140,6 @@ class GoogleSheetsAPI {
             
             const result = await response.json();
             this.cache.delete(sheetName);
-            delete this.localCache[sheetName];
-            this.saveLocalCache();
             
             return result;
         } catch (error) {
@@ -142,49 +159,51 @@ function toggleProfileMenu() {
 }
 
 function showProfileFallback(img) {
-    const fallback = document.getElementById('profileFallback');
+    document.getElementById('profileFallback').classList.remove('hidden');
     img.style.display = 'none';
-    fallback.classList.remove('hidden');
 }
 
 function loadUserProfile(username) {
     const profilePic = document.getElementById('profilePic');
-    const profileName = document.getElementById('profileName');
-    const profileUsername = document.getElementById('profileUsername');
     const profileFallback = document.getElementById('profileFallback');
     
-    profilePic.src = `https://quaf.tech/pic/${username}.png`;
-    profilePic.onerror = function() {
-        this.onerror = function() {
-            this.onerror = function() {
-                this.style.display = 'none';
-                profileFallback.classList.remove('hidden');
-            };
-            this.src = `https://quaf.tech/pic/${username}.jpeg`;
-        };
-        this.src = `https://quaf.tech/pic/${username}.jpg`;
+    // Try PNG first, fallback to JPEG, then JPG
+    const tryLoad = (ext) => {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve(ext);
+            img.onerror = () => resolve(null);
+            img.src = `https://quaf.tech/pic/${username}.${ext}`;
+        });
     };
     
-    profilePic.style.display = 'block';
-    profileFallback.classList.add('hidden');
+    (async () => {
+        const ext = await tryLoad('png') || await tryLoad('jpeg') || await tryLoad('jpg');
+        if (ext) {
+            profilePic.src = `https://quaf.tech/pic/${username}.${ext}`;
+            profilePic.style.display = 'block';
+            profileFallback.classList.add('hidden');
+        } else {
+            profileFallback.classList.remove('hidden');
+            profilePic.style.display = 'none';
+        }
+    })();
     
     if (currentUser) {
-        profileName.textContent = currentUser.name;
-        profileUsername.textContent = `@${username}`;
+        document.getElementById('profileName').textContent = currentUser.name;
+        document.getElementById('profileUsername').textContent = `@${username}`;
     }
 }
 
 document.addEventListener('click', function(event) {
-    const profileContainer = event.target.closest('.profile-pic-container');
     const profileMenu = document.getElementById('profileMenu');
-    
-    if (!profileContainer && profileMenu && !profileMenu.classList.contains('hidden')) {
+    if (!event.target.closest('.profile-pic-container') && !profileMenu.classList.contains('hidden')) {
         profileMenu.classList.add('hidden');
     }
 });
 
 // =============================
-// 🔑 Authentication
+// 🔑 Authentication (OPTIMIZED)
 // =============================
 async function login() {
     const username = document.getElementById('username').value.trim();
@@ -195,15 +214,16 @@ async function login() {
         return;
     }
 
-    const loginBtn = document.querySelector('button[type="submit"]');
-    const originalText = loginBtn.innerHTML;
+    const loginBtn = document.querySelector('#loginForm button[type="submit"]');
+    const originalHTML = loginBtn.innerHTML;
     loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Signing In...';
     loginBtn.disabled = true;
 
     try {
+        // Use cached users if available
         const users = await api.getSheet("user_credentials", false);
         
-        if (!users || users.error || !Array.isArray(users)) {
+        if (!Array.isArray(users)) {
             showError('Failed to fetch user data');
             return;
         }
@@ -231,7 +251,8 @@ async function login() {
                 document.getElementById('adminNav').classList.remove('hidden');
                 document.getElementById('attendanceDate').value = today;
                 
-                Promise.all([
+                // Run both in parallel
+                await Promise.all([
                     loadAdminData(),
                     showPage('adminAttendance')
                 ]);
@@ -239,7 +260,8 @@ async function login() {
                 document.getElementById('studentNav').classList.remove('hidden');
                 document.getElementById('adminNav').classList.add('hidden');
                 
-                Promise.all([
+                // Run both in parallel
+                await Promise.all([
                     loadAttendance(),
                     showPage('attendance')
                 ]);
@@ -252,7 +274,7 @@ async function login() {
     } catch (error) {
         showError('Network error: ' + error.message);
     } finally {
-        loginBtn.innerHTML = originalText;
+        loginBtn.innerHTML = originalHTML;
         loginBtn.disabled = false;
     }
 }
@@ -270,6 +292,7 @@ function hideError() {
 function logout() {
     currentUser = null;
     api.clearCache();
+    userCache = null;
     
     destroyAllCharts(chartInstances);
     destroyAllCharts(adminChartInstances);
@@ -285,114 +308,32 @@ function logout() {
 }
 
 function destroyAllCharts(chartObj) {
-    Object.values(chartObj).forEach(chart => {
-        if (chart && chart.destroy) {
-            chart.destroy();
+    for (const key of Object.keys(chartObj)) {
+        if (chartObj[key]?.destroy) {
+            chartObj[key].destroy();
         }
-    });
-    Object.keys(chartObj).forEach(key => delete chartObj[key]);
-}
-
-function showSignup() {
-    document.getElementById('loginSection').classList.add('hidden');
-    document.getElementById('signupSection').classList.remove('hidden');
-    hideError();
-}
-
-function showLogin() {
-    document.getElementById('signupSection').classList.add('hidden');
-    document.getElementById('loginSection').classList.remove('hidden');
-    hideSignupError();
-    hideSignupSuccess();
-}
-
-function showSignupError(message) {
-    const errorDiv = document.getElementById('signupError');
-    errorDiv.textContent = message;
-    errorDiv.classList.remove('hidden');
-}
-
-function hideSignupError() {
-    document.getElementById('signupError').classList.add('hidden');
-}
-
-function showSignupSuccess(message) {
-    const successDiv = document.getElementById('signupSuccess');
-    successDiv.textContent = message;
-    successDiv.classList.remove('hidden');
-}
-
-function hideSignupSuccess() {
-    document.getElementById('signupSuccess').classList.add('hidden');
-}
-
-async function submitSignup() {
-    const name = document.getElementById('signupName').value.trim();
-    const phone = document.getElementById('signupPhone').value.trim();
-    const gmail = document.getElementById('signupGmail').value.trim();
-    const state = document.getElementById('signupState').value.trim();
-    const district = document.getElementById('signupDistrict').value.trim();
-    const place = document.getElementById('signupPlace').value.trim();
-    const po = document.getElementById('signupPO').value.trim();
-    const pinCode = document.getElementById('signupPinCode').value.trim();
-
-    if (!name || !phone || !state || !district || !place || !po || !pinCode) {
-        showSignupError('Please fill in all required fields');
-        return;
-    }
-
-    if (!/^\d{6}$/.test(pinCode)) {
-        showSignupError('Please enter a valid 6-digit pin code');
-        return;
-    }
-
-    const signupBtn = document.querySelector('#signupForm button[type="submit"]');
-    const originalText = signupBtn.innerHTML;
-    signupBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating Account...';
-    signupBtn.disabled = true;
-
-    try {
-        const rowData = [
-            name,
-            phone,
-            gmail || '',
-            state,
-            district,
-            place,
-            po,
-            pinCode,
-            new Date().toISOString().split('T')[0]
-        ];
-
-        const result = await api.addRow('registration', rowData);
-
-        if (result && (result.success || result.includes?.('Success'))) {
-            showSignupSuccess('Account created successfully! Please contact admin for login credentials.');
-            document.getElementById('signupForm').reset();
-            hideSignupError();
-        } else {
-            throw new Error(result?.error || 'Unknown error occurred');
-        }
-    } catch (error) {
-        console.error('Signup error:', error);
-        showSignupError('Registration failed: ' + error.message);
-    } finally {
-        signupBtn.innerHTML = originalText;
-        signupBtn.disabled = false;
+        delete chartObj[key];
     }
 }
 
 // =============================
-// 📍 Navigation
+// 📍 Navigation (OPTIMIZED)
 // =============================
 async function showPage(page) {
-    document.querySelectorAll('.page-content').forEach(p => p.classList.add('hidden'));
+    // Hide all pages
+    const allPages = document.querySelectorAll('.page-content');
+    allPages.forEach(p => p.classList.add('hidden'));
+    
+    // Reset all nav buttons
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.classList.remove('active', 'border-green-500', 'text-green-600', 'border-blue-500', 'text-blue-600');
     });
 
-    document.getElementById(page + 'Page').classList.remove('hidden');
+    // Show target page
+    const targetPage = document.getElementById(page + 'Page');
+    if (targetPage) targetPage.classList.remove('hidden');
     
+    // Set active nav
     const navMap = {
         'attendance': 'navAttendance',
         'status': 'navStatus',
@@ -404,7 +345,7 @@ async function showPage(page) {
     if (activeNavId) {
         const navBtn = document.getElementById(activeNavId);
         if (navBtn) {
-            if (currentUser && currentUser.role === 'admin') {
+            if (currentUser?.role === 'admin') {
                 navBtn.classList.add('active', 'border-blue-500', 'text-blue-600');
             } else {
                 navBtn.classList.add('active', 'border-green-500', 'text-green-600');
@@ -414,51 +355,61 @@ async function showPage(page) {
 
     currentPage = page;
 
-    if (page === 'attendance' && currentUser.role === 'student') {
-        await loadAttendance();
-    } else if (page === 'status') {
-        await loadStatusCharts();
-    } else if (page === 'adminAttendance') {
-        await loadAdminData();
-    } else if (page === 'adminStatus') {
-        await loadAllUsersStatus();
+    // Load page-specific data
+    switch(page) {
+        case 'attendance':
+            if (currentUser?.role === 'student') await loadAttendance();
+            break;
+        case 'status':
+            await loadStatusCharts();
+            break;
+        case 'adminAttendance':
+            await loadAdminData();
+            break;
+        case 'adminStatus':
+            await loadAllUsersStatus();
+            break;
     }
 }
 
 // =============================
-// 📅 Student Attendance Functions
+// 📅 Student Attendance (OPTIMIZED - Parallel Loading)
 // =============================
 async function loadAttendance() {
     const container = document.getElementById('subjectAttendanceCards');
-    
     container.innerHTML = generateSkeleton(3);
 
     try {
         if (!currentUser.class) {
-            container.innerHTML = '<p class="text-gray-500 text-center py-8">No class assigned. Please contact administrator.</p>';
+            container.innerHTML = '<p class="text-gray-500 text-center py-8">No class assigned.</p>';
             document.getElementById('userClassAttendance').textContent = 'Class: Not Assigned';
             return;
         }
         
         document.getElementById('userClassAttendance').textContent = `Class ${currentUser.class}`;
         
-        // Get all subject-based attendance sheets for this class
+        // Get subjects and fetch all attendance sheets in PARALLEL
         const subjects = await getStudentSubjects();
         
         if (!subjects || subjects.length === 0) {
-            container.innerHTML = '<p class="text-gray-500 text-center py-8">No subjects found for your class.</p>';
+            container.innerHTML = '<p class="text-gray-500 text-center py-8">No subjects found.</p>';
             return;
         }
         
-        // Load attendance data from all subject sheets
+        // Create all sheet names
+        const sheetNames = subjects.map(s => `attendance_${currentUser.class}_${s}`);
+        
+        // Fetch ALL sheets in parallel
+        const allData = await api.getSheets(sheetNames);
+        
+        // Process data
         const attendanceBySubject = {};
         
-        for (const subject of subjects) {
-            const sheetName = `attendance_${currentUser.class}_${subject}`;
-            const attendance = await api.getSheet(sheetName);
+        subjects.forEach((subject, index) => {
+            const sheetName = sheetNames[index];
+            const attendance = allData[sheetName];
             
-            if (Array.isArray(attendance) && attendance.length > 0) {
-                // Filter records for this student
+            if (Array.isArray(attendance)) {
                 const studentRecords = attendance.filter(r => 
                     r.username === currentUser.username
                 );
@@ -469,13 +420,14 @@ async function loadAttendance() {
                     );
                 }
             }
-        }
+        });
 
         if (Object.keys(attendanceBySubject).length === 0) {
             container.innerHTML = '<p class="text-gray-500 text-center py-8">No attendance records found.</p>';
             return;
         }
 
+        // Build HTML in one go using DocumentFragment
         const fragment = document.createDocumentFragment();
 
         Object.entries(attendanceBySubject).forEach(([subject, records]) => {
@@ -483,11 +435,10 @@ async function loadAttendance() {
             const totalCount = records.length;
             const percentage = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0;
             
-            const subjectCard = document.createElement('div');
-            subjectCard.className = 'subject-card';
-            
             const safeSubject = subject.replace(/[^a-zA-Z0-9]/g, '_');
             
+            const subjectCard = document.createElement('div');
+            subjectCard.className = 'subject-card';
             subjectCard.innerHTML = `
                 <div class="subject-header" onclick="toggleSubjectAttendance('${safeSubject}')">
                     <div class="flex items-center min-w-0 flex-1">
@@ -528,368 +479,362 @@ async function loadAttendance() {
         
     } catch (error) {
         console.error('Error loading attendance:', error);
-        container.innerHTML = '<p class="text-red-500 text-center py-8">Error loading attendance. Please try again.</p>';
+        container.innerHTML = '<p class="text-red-500 text-center py-8">Error loading attendance.</p>';
     }
 }
 
 async function getStudentSubjects() {
-    // Get subjects from admin's assignment for this class
+    // Get subjects from admin's assignment
     if (currentUser.adminSubjects) {
-        return Object.values(currentUser.adminSubjects).flat();
+        const allSubjects = new Set();
+        for (const subjects of Object.values(currentUser.adminSubjects)) {
+            subjects.forEach(s => allSubjects.add(s));
+        }
+        if (allSubjects.size > 0) return [...allSubjects];
     }
     
-    // Fallback: get subjects from all users with same class
+    // Fallback
     try {
-        const users = await api.getSheet("user_credentials");
+        const users = await getCachedUsers();
         if (Array.isArray(users)) {
             const classUser = users.find(u => 
                 u.role === 'student' && 
                 u.subjects && 
                 String(u.class) === String(currentUser.class)
             );
-            if (classUser && classUser.subjects) {
-                const subjectsStr = classUser.subjects.toString();
-                return subjectsStr.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+            if (classUser?.subjects) {
+                return classUser.subjects.toString().split(',').map(s => s.trim().toLowerCase()).filter(s => s);
             }
         }
     } catch (e) {
         console.error('Error getting subjects:', e);
     }
     
-    // Default subjects
+    return getDefaultSubjects();
+}
+
+function getDefaultSubjects() {
     return ['quaf', 'arabic_wing', 'urdu_wing', 'english_wing', 'malayalam_wing', 
             'media_wing', 'sigma_wing', 'art_wing', 'oration_wing', 'gk_wing', 
             'himaya_wing', 'class', 'swalah'];
+}
+
+async function getCachedUsers() {
+    const now = Date.now();
+    if (userCache && (now - userCacheTime) < USER_CACHE_TIMEOUT) {
+        return userCache;
+    }
+    userCache = await api.getSheet("user_credentials");
+    userCacheTime = now;
+    return userCache;
 }
 
 function toggleSubjectAttendance(subject) {
     const container = document.getElementById(`attendance-${subject}`);
     const arrow = document.getElementById(`arrow-${subject}`);
     
-    if (container && arrow) {
-        if (!container.classList.contains('expanded')) {
-            document.querySelectorAll('.attendance-container.expanded').forEach(c => {
-                if (c !== container) c.classList.remove('expanded');
-            });
-            document.querySelectorAll('.expand-arrow.expanded').forEach(a => {
-                if (a !== arrow) a.classList.remove('expanded');
-            });
-            
-            container.classList.add('expanded');
-            arrow.classList.add('expanded');
-        } else {
-            container.classList.remove('expanded');
-            arrow.classList.remove('expanded');
-        }
-    }
+    if (!container || !arrow) return;
+    
+    // Close all other expanded containers
+    document.querySelectorAll('.attendance-container.expanded').forEach(c => {
+        if (c !== container) c.classList.remove('expanded');
+    });
+    document.querySelectorAll('.expand-arrow.expanded').forEach(a => {
+        if (a !== arrow) a.classList.remove('expanded');
+    });
+    
+    container.classList.toggle('expanded');
+    arrow.classList.toggle('expanded');
 }
 
 // =============================
-// 📊 Status Charts & Summary
+// 📊 Status Charts (OPTIMIZED - Instant Render)
 // =============================
 async function loadStatusCharts() {
     try {
         const subjects = await getStudentSubjects();
-        let allAttendance = [];
         
-        // Load all subject attendance data
-        for (const subject of subjects) {
-            const sheetName = `attendance_${currentUser.class}_${subject}`;
-            const attendance = await api.getSheet(sheetName);
-            
+        // Fetch ALL attendance sheets in parallel
+        const sheetNames = subjects.map(s => `attendance_${currentUser.class}_${s}`);
+        const allData = await api.getSheets(sheetNames);
+        
+        // Process all attendance records
+        let allAttendance = [];
+        subjects.forEach((subject, index) => {
+            const attendance = allData[sheetNames[index]];
             if (Array.isArray(attendance)) {
                 const studentRecords = attendance.filter(r => 
                     r.username === currentUser.username
                 );
                 allAttendance = allAttendance.concat(studentRecords);
             }
-        }
+        });
         
+        // Render charts in parallel
         await Promise.all([
-            loadOverallAttendancePieChart(allAttendance, 'overallAttendanceChart', 'overallStats', chartInstances, 'overallAttendance'),
-            loadSubjectPieCharts(allAttendance, 'subjectPieCharts', studentSubjectChartInstances)
+            renderOverallChart(allAttendance, 'overallAttendanceChart', 'overallStats', chartInstances, 'overallAttendance'),
+            renderSubjectCharts(allAttendance, 'subjectPieCharts', studentSubjectChartInstances)
         ]);
     } catch (error) {
         console.error('Error loading status charts:', error);
     }
 }
 
-async function loadOverallAttendancePieChart(attendance, canvasId, statsId, chartsObj, chartKey) {
-    try {
-        const presentCount = Array.isArray(attendance) ? 
-            attendance.filter(a => a.status === 'present').length : 0;
-        const absentCount = Array.isArray(attendance) ? 
-            attendance.filter(a => a.status === 'absent').length : 0;
+async function renderOverallChart(attendance, canvasId, statsId, chartsObj, chartKey) {
+    const presentCount = Array.isArray(attendance) ? 
+        attendance.filter(a => a.status === 'present').length : 0;
+    const absentCount = Array.isArray(attendance) ? 
+        attendance.filter(a => a.status === 'absent').length : 0;
 
-        const statsContainer = document.getElementById(statsId);
-        if (statsContainer) {
-            statsContainer.innerHTML = `
-                <div class="stats-card">
-                    <div class="stats-number">${presentCount}</div>
-                    <div class="stats-label">Present Days</div>
-                </div>
-                <div class="stats-card">
-                    <div class="stats-number red">${absentCount}</div>
-                    <div class="stats-label">Absent Days</div>
-                </div>
-            `;
-        }
+    // Update stats immediately
+    const statsContainer = document.getElementById(statsId);
+    if (statsContainer) {
+        statsContainer.innerHTML = `
+            <div class="stats-card">
+                <div class="stats-number">${presentCount}</div>
+                <div class="stats-label">Present Days</div>
+            </div>
+            <div class="stats-card">
+                <div class="stats-number red">${absentCount}</div>
+                <div class="stats-label">Absent Days</div>
+            </div>
+        `;
+    }
 
-        const ctx = document.getElementById(canvasId);
-        if (!ctx) return;
-        
-        if (chartsObj[chartKey]) {
-            chartsObj[chartKey].destroy();
-        }
-        
-        chartsObj[chartKey] = new Chart(ctx.getContext('2d'), {
-            type: 'pie',
-            data: {
-                labels: ['Present', 'Absent'],
-                datasets: [{
-                    data: [presentCount, absentCount],
-                    backgroundColor: ['#10b981', '#ef4444'],
-                    borderColor: ['#059669', '#dc2626'],
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 20,
-                            font: { size: 14 }
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = context.parsed || 0;
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                                return `${label}: ${value} (${percentage}%)`;
-                            }
+    // Render chart immediately (no setTimeout)
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+    
+    // Destroy existing chart
+    if (chartsObj[chartKey]) {
+        chartsObj[chartKey].destroy();
+    }
+    
+    chartsObj[chartKey] = new Chart(ctx.getContext('2d'), {
+        type: 'pie',
+        data: {
+            labels: ['Present', 'Absent'],
+            datasets: [{
+                data: [presentCount || 1, absentCount || 0], // Ensure at least 1 to show ring
+                backgroundColor: ['#10b981', '#ef4444'],
+                borderColor: ['#059669', '#dc2626'],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 500 }, // Faster animation
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 20,
+                        font: { size: 14 }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                            return `${label}: ${value} (${percentage}%)`;
                         }
                     }
                 }
             }
-        });
-    } catch (error) {
-        console.error('Error loading overall attendance pie chart:', error);
-    }
+        }
+    });
 }
 
-async function loadSubjectPieCharts(attendance, containerId, chartsObj) {
-    try {
-        const container = document.getElementById(containerId);
-        if (!container) return;
+async function renderSubjectCharts(attendance, containerId, chartsObj) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
 
-        destroyAllCharts(chartsObj);
+    // Destroy all existing charts
+    destroyAllCharts(chartsObj);
 
-        if (!Array.isArray(attendance) || attendance.length === 0) {
-            container.innerHTML = '<p class="text-gray-500 text-center col-span-full py-8">No attendance data available</p>';
-            return;
+    if (!Array.isArray(attendance) || attendance.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center col-span-full py-8">No attendance data</p>';
+        return;
+    }
+
+    // Process subject stats
+    const subjectStats = {};
+    attendance.forEach(record => {
+        const subject = record.subject || 'General';
+        if (!subjectStats[subject]) {
+            subjectStats[subject] = { present: 0, absent: 0 };
         }
-
-        const subjectStats = {};
-        attendance.forEach(record => {
-            const subject = record.subject || 'General';
-            if (!subjectStats[subject]) {
-                subjectStats[subject] = { present: 0, absent: 0 };
-            }
-            if (record.status === 'present') {
-                subjectStats[subject].present++;
-            } else {
-                subjectStats[subject].absent++;
-            }
-        });
-
-        const subjects = Object.keys(subjectStats);
-        
-        if (subjects.length === 0) {
-            container.innerHTML = '<p class="text-gray-500 text-center col-span-full py-8">No attendance data available</p>';
-            return;
+        if (record.status === 'present') {
+            subjectStats[subject].present++;
+        } else {
+            subjectStats[subject].absent++;
         }
+    });
 
-        let html = '';
-        const chartIds = [];
+    const subjects = Object.keys(subjectStats);
+    
+    if (subjects.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center col-span-full py-8">No data available</p>';
+        return;
+    }
+
+    // Build HTML
+    let html = '';
+    const chartConfigs = [];
+    
+    subjects.forEach((subject, index) => {
+        const stats = subjectStats[subject];
+        const total = stats.present + stats.absent;
+        const percentage = total > 0 ? Math.round((stats.present / total) * 100) : 0;
+        const canvasId = `subj-${index}-${Date.now()}`;
         
-        subjects.forEach((subject, index) => {
-            const stats = subjectStats[subject];
-            const total = stats.present + stats.absent;
-            const percentage = total > 0 ? Math.round((stats.present / total) * 100) : 0;
-            const canvasId = `subjectChart-${index}-${Date.now()}`;
-            chartIds.push({ canvasId, stats });
-            
-            html += `
-                <div class="bg-white rounded-lg p-4 border-2 border-gray-200">
-                    <div class="flex items-center justify-center mb-3">
-                        <div class="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center text-white mr-2">
-                            <i class="${getSubjectIcon(subject)} text-sm"></i>
-                        </div>
-                        <h4 class="font-semibold text-gray-800">${subject}</h4>
+        chartConfigs.push({ canvasId, stats });
+        
+        html += `
+            <div class="bg-white rounded-lg p-4 border-2 border-gray-200">
+                <div class="flex items-center justify-center mb-3">
+                    <div class="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center text-white mr-2">
+                        <i class="${getSubjectIcon(subject)} text-sm"></i>
                     </div>
-                    <div class="chart-container-small mx-auto">
-                        <canvas id="${canvasId}"></canvas>
-                    </div>
-                    <div class="text-center mt-3">
-                        <span class="text-lg font-bold ${percentage >= 75 ? 'text-green-600' : 'text-red-600'}">${percentage}%</span>
-                        <p class="text-xs text-gray-500">${stats.present}/${total} present</p>
-                    </div>
+                    <h4 class="font-semibold text-gray-800">${subject}</h4>
                 </div>
-            `;
-        });
+                <div class="chart-container-small mx-auto">
+                    <canvas id="${canvasId}"></canvas>
+                </div>
+                <div class="text-center mt-3">
+                    <span class="text-lg font-bold ${percentage >= 75 ? 'text-green-600' : 'text-red-600'}">${percentage}%</span>
+                    <p class="text-xs text-gray-500">${stats.present}/${total} present</p>
+                </div>
+            </div>
+        `;
+    });
 
-        container.innerHTML = html;
-        
-        // Create charts after DOM update
-        setTimeout(() => {
-            chartIds.forEach(({ canvasId, stats }) => {
-                const ctx = document.getElementById(canvasId);
-                if (ctx) {
-                    chartsObj[canvasId] = new Chart(ctx.getContext('2d'), {
-                        type: 'pie',
-                        data: {
-                            labels: ['Present', 'Absent'],
-                            datasets: [{
-                                data: [stats.present, stats.absent],
-                                backgroundColor: ['#10b981', '#ef4444'],
-                                borderColor: ['#059669', '#dc2626'],
-                                borderWidth: 2
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
-                                    display: false
-                                }
-                            }
-                        }
-                    });
+    container.innerHTML = html;
+    
+    // Create all charts IMMEDIATELY (no setTimeout)
+    chartConfigs.forEach(({ canvasId, stats }) => {
+        const ctx = document.getElementById(canvasId);
+        if (ctx) {
+            chartsObj[canvasId] = new Chart(ctx.getContext('2d'), {
+                type: 'pie',
+                data: {
+                    labels: ['Present', 'Absent'],
+                    datasets: [{
+                        data: [stats.present || 1, stats.absent || 0],
+                        backgroundColor: ['#10b981', '#ef4444'],
+                        borderColor: ['#059669', '#dc2626'],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 300 },
+                    plugins: {
+                        legend: { display: false }
+                    }
                 }
             });
-        }, 100);
-        
-    } catch (error) {
-        console.error('Error loading subject pie charts:', error);
-        const container = document.getElementById(containerId);
-        if (container) {
-            container.innerHTML = '<p class="text-red-500 text-center col-span-full py-8">Error loading charts</p>';
         }
-    }
+    });
 }
 
 // =============================
-// 👨‍💼 Admin Functions
+// 👨‍💼 Admin Functions (OPTIMIZED)
 // =============================
 async function loadAdminData() {
     try {
-        if (currentUser.role === 'admin') {
-            let adminClasses = [];
-            let adminSubjects = {};
-            
-            if (currentUser.class) {
-                adminClasses = currentUser.class.toString().trim()
-                    .split(/[,\s]+/)
-                    .map(c => c.trim())
-                    .filter(c => c && /^\d+$/.test(c));
-            }
-            
-            if (currentUser.subjects && adminClasses.length > 0) {
-                const subjectsStr = currentUser.subjects.toString().trim();
-                const bracketMatches = subjectsStr.match(/\(\d+-[^)]+\)/g);
-                
-                if (bracketMatches) {
-                    bracketMatches.forEach(match => {
-                        const [classNum, subjectsString] = match.slice(1, -1).split('-', 2);
-                        if (classNum && subjectsString) {
-                            const subjects = subjectsString.toLowerCase() === 'all' 
-                                ? ['quaf', 'arabic_wing', 'urdu_wing', 'english_wing', 'malayalam_wing', 'media_wing', 'sigma_wing', 'art_wing', 'oration_wing', 'gk_wing', 'himaya_wing', 'class', 'swalah']
-                                : subjectsString.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
-                            
-                            if (subjects.length > 0 && adminClasses.includes(classNum.trim())) {
-                                adminSubjects[classNum.trim()] = subjects;
-                            }
-                        }
-                    });
-                } else {
-                    const subjects = subjectsStr.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
-                    adminClasses.forEach(classNum => {
-                        adminSubjects[classNum] = [...subjects];
-                    });
-                }
-            }
-            
-            currentUser.adminClasses = adminClasses;
-            currentUser.adminSubjects = adminSubjects;
-            
-            const teachingInfo = document.getElementById('teachingSubjectsAttendance');
-            if (teachingInfo) {
-                if (adminClasses.length > 0) {
-                    teachingInfo.textContent = `Classes: ${adminClasses.join(', ')}`;
-                } else {
-                    teachingInfo.textContent = 'No classes or subjects assigned';
-                }
-            }
-            
-            await populateAdminFilters();
+        if (currentUser.role !== 'admin') return;
+        
+        let adminClasses = [];
+        let adminSubjects = {};
+        
+        if (currentUser.class) {
+            adminClasses = currentUser.class.toString().trim()
+                .split(/[,\s]+/)
+                .map(c => c.trim())
+                .filter(c => c && /^\d+$/.test(c));
         }
+        
+        if (currentUser.subjects && adminClasses.length > 0) {
+            const subjectsStr = currentUser.subjects.toString().trim();
+            const bracketMatches = subjectsStr.match(/\(\d+-[^)]+\)/g);
+            
+            if (bracketMatches) {
+                bracketMatches.forEach(match => {
+                    const [classNum, subjectsString] = match.slice(1, -1).split('-', 2);
+                    if (classNum && subjectsString) {
+                        const subjects = subjectsString.toLowerCase() === 'all' 
+                            ? getDefaultSubjects()
+                            : subjectsString.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+                        
+                        if (subjects.length > 0 && adminClasses.includes(classNum.trim())) {
+                            adminSubjects[classNum.trim()] = subjects;
+                        }
+                    }
+                });
+            } else {
+                const subjects = subjectsStr.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+                adminClasses.forEach(classNum => {
+                    adminSubjects[classNum] = [...subjects];
+                });
+            }
+        }
+        
+        currentUser.adminClasses = adminClasses;
+        currentUser.adminSubjects = adminSubjects;
+        
+        const teachingInfo = document.getElementById('teachingSubjectsAttendance');
+        if (teachingInfo) {
+            teachingInfo.textContent = adminClasses.length > 0 ? 
+                `Classes: ${adminClasses.join(', ')}` : 'No classes or subjects assigned';
+        }
+        
+        await populateAdminFilters();
     } catch (error) {
         console.error('Error loading admin data:', error);
     }
 }
 
-async function populateAdminFilters() {
+function populateAdminFilters() {
     const classSelect = document.getElementById('adminClassSelect');
     const subjectSelect = document.getElementById('adminSubjectSelect');
     
     if (!classSelect || !subjectSelect) return;
     
-    classSelect.innerHTML = '<option value="">-- Select Class --</option>';
+    let classHTML = '<option value="">-- Select Class --</option>';
+    if (currentUser.adminClasses?.length > 0) {
+        currentUser.adminClasses.forEach(classNum => {
+            classHTML += `<option value="${classNum}">Class ${classNum}</option>`;
+        });
+    }
+    classSelect.innerHTML = classHTML;
+    
     subjectSelect.innerHTML = '<option value="">-- Select Subject --</option>';
     subjectSelect.disabled = true;
     
-    if (currentUser.adminClasses && currentUser.adminClasses.length > 0) {
-        currentUser.adminClasses.forEach(classNum => {
-            const option = document.createElement('option');
-            option.value = classNum;
-            option.textContent = `Class ${classNum}`;
-            classSelect.appendChild(option);
-        });
-    }
-    
-    classSelect.removeEventListener('change', handleAdminClassChange);
-    subjectSelect.removeEventListener('change', handleAdminSubjectChange);
-    
-    classSelect.addEventListener('change', handleAdminClassChange);
-    subjectSelect.addEventListener('change', handleAdminSubjectChange);
+    // Use event delegation
+    classSelect.onchange = handleAdminClassChange;
+    subjectSelect.onchange = handleAdminSubjectChange;
 }
 
-async function handleAdminClassChange() {
+function handleAdminClassChange() {
     const selectedClass = this.value;
     const subjectSelect = document.getElementById('adminSubjectSelect');
-    subjectSelect.innerHTML = '<option value="">-- Select Subject --</option>';
     
-    if (selectedClass) {
+    if (selectedClass && currentUser.adminSubjects?.[selectedClass]) {
+        let subjectHTML = '<option value="">-- Select Subject --</option>';
+        currentUser.adminSubjects[selectedClass].forEach(subject => {
+            subjectHTML += `<option value="${subject.toLowerCase()}">${subject.charAt(0).toUpperCase() + subject.slice(1)}</option>`;
+        });
+        subjectSelect.innerHTML = subjectHTML;
         subjectSelect.disabled = false;
-        
-        let availableSubjects = currentUser.adminSubjects[selectedClass] || [];
-        
-        if (availableSubjects.length > 0) {
-            availableSubjects.forEach(subject => {
-                const option = document.createElement('option');
-                option.value = subject.toLowerCase();
-                option.textContent = subject.charAt(0).toUpperCase() + subject.slice(1);
-                subjectSelect.appendChild(option);
-            });
-        }
     } else {
+        subjectSelect.innerHTML = '<option value="">-- Select Subject --</option>';
         subjectSelect.disabled = true;
     }
     
@@ -915,10 +860,13 @@ async function loadAdminAttendanceView(classNum, subject, date) {
         document.getElementById('selectedAttendanceInfo').textContent = 
             `Class ${classNum} - ${subject.charAt(0).toUpperCase() + subject.slice(1)} - ${formatDate(date)}`;
         
-        // Load existing attendance for this class-subject
-        const attendanceSheet = `attendance_${classNum}_${subject}`;
-        const existingAttendance = await api.getSheet(attendanceSheet);
+        // Load existing attendance and users in PARALLEL
+        const [existingAttendance, users] = await Promise.all([
+            api.getSheet(`attendance_${classNum}_${subject}`),
+            getCachedUsers()
+        ]);
         
+        // Build existing attendance map
         const existingMap = new Map();
         if (Array.isArray(existingAttendance)) {
             existingAttendance.forEach(record => {
@@ -928,24 +876,25 @@ async function loadAdminAttendanceView(classNum, subject, date) {
             });
         }
         
-        const users = await api.getSheet("user_credentials");
-        const adminStudentsList = document.getElementById('adminStudentsList');
-        
-        if (!users || users.error) {
-            adminStudentsList.innerHTML = '<p class="text-red-500 text-center col-span-full">Error loading students.</p>';
+        if (!Array.isArray(users)) {
+            document.getElementById('adminStudentsList').innerHTML = 
+                '<p class="text-red-500 text-center col-span-full">Error loading students.</p>';
             return;
         }
         
+        // Filter students for this class
         const classStudents = users.filter(user => 
             user.role === 'student' && String(user.class) === String(classNum)
         );
         
         if (classStudents.length === 0) {
-            adminStudentsList.innerHTML = `<p class="text-gray-500 text-center col-span-full">No students found in Class ${classNum}.</p>`;
+            document.getElementById('adminStudentsList').innerHTML = 
+                `<p class="text-gray-500 text-center col-span-full">No students found in Class ${classNum}.</p>`;
             return;
         }
         
-        const studentsHtml = classStudents.map(student => {
+        // Build student cards HTML in one go
+        const studentsHTML = classStudents.map(student => {
             const initials = student.full_name ? 
                 student.full_name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) : 
                 student.username.substring(0, 2).toUpperCase();
@@ -972,12 +921,12 @@ async function loadAdminAttendanceView(classNum, subject, date) {
             `;
         }).join('');
         
-        adminStudentsList.innerHTML = studentsHtml;
+        document.getElementById('adminStudentsList').innerHTML = studentsHTML;
         
     } catch (error) {
         console.error('Error loading admin attendance view:', error);
         document.getElementById('adminStudentsList').innerHTML = 
-            '<p class="text-red-500 text-center col-span-full">Error loading data. Please try again.</p>';
+            '<p class="text-red-500 text-center col-span-full">Error loading data.</p>';
     }
 }
 
@@ -985,24 +934,23 @@ function toggleStudentSelection(username) {
     const checkbox = document.getElementById(`check-${username}`);
     const card = document.getElementById(`student-card-${username}`);
     
-    if (checkbox && card) {
-        checkbox.checked = !checkbox.checked;
-        
-        if (checkbox.checked) {
-            card.classList.add('selected');
-            checkbox.nextElementSibling.textContent = 'Present';
-        } else {
-            card.classList.remove('selected');
-            checkbox.nextElementSibling.textContent = 'Absent';
-        }
+    if (!checkbox || !card) return;
+    
+    checkbox.checked = !checkbox.checked;
+    
+    if (checkbox.checked) {
+        card.classList.add('selected');
+        checkbox.nextElementSibling.textContent = 'Present';
+    } else {
+        card.classList.remove('selected');
+        checkbox.nextElementSibling.textContent = 'Absent';
     }
 }
 
 function selectAllStudents() {
     document.querySelectorAll('#adminStudentsList input[type="checkbox"]').forEach(checkbox => {
         checkbox.checked = true;
-        const card = checkbox.closest('.student-card');
-        if (card) card.classList.add('selected');
+        checkbox.closest('.student-card')?.classList.add('selected');
         if (checkbox.nextElementSibling) checkbox.nextElementSibling.textContent = 'Present';
     });
 }
@@ -1010,8 +958,7 @@ function selectAllStudents() {
 function deselectAllStudents() {
     document.querySelectorAll('#adminStudentsList input[type="checkbox"]').forEach(checkbox => {
         checkbox.checked = false;
-        const card = checkbox.closest('.student-card');
-        if (card) card.classList.remove('selected');
+        checkbox.closest('.student-card')?.classList.remove('selected');
         if (checkbox.nextElementSibling) checkbox.nextElementSibling.textContent = 'Absent';
     });
 }
@@ -1027,81 +974,76 @@ async function submitAttendance() {
     }
     
     const submitBtn = document.getElementById('submitAttendanceBtn');
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving Attendance...';
+    const originalHTML = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
     submitBtn.disabled = true;
     
     try {
-        // Save to subject-based sheet only
-        const attendanceSheet = `attendance_${selectedClass}_${selectedSubject}`;
-        
         const checkboxes = document.querySelectorAll('#adminStudentsList input[type="checkbox"]');
         const attendanceRows = [];
         
         checkboxes.forEach(checkbox => {
             const username = checkbox.id.replace('check-', '');
             const status = checkbox.checked ? 'present' : 'absent';
-            
             attendanceRows.push([selectedDate, username, status, selectedSubject]);
         });
         
-        // Save to single subject-based attendance sheet
+        // Save to subject-based sheet
+        const attendanceSheet = `attendance_${selectedClass}_${selectedSubject}`;
         await api.addBatchRows(attendanceSheet, attendanceRows);
+        
+        // Invalidate cache for this specific sheet and related status pages
+        api.invalidateCache(`attendance_${selectedClass}_${selectedSubject}`);
+        api.invalidateCache('user_credentials'); // Refresh user cache
         
         alert(`Attendance saved successfully for ${attendanceRows.length} students!`);
         
-        // Clear cache to refresh data on next load
-        api.clearCache();
+        // Reset view
+        document.getElementById('adminAttendanceView').classList.add('hidden');
+        document.getElementById('adminDefaultView').classList.remove('hidden');
         
     } catch (error) {
         console.error('Error submitting attendance:', error);
         alert('Error saving attendance: ' + error.message);
     } finally {
-        submitBtn.innerHTML = originalText;
+        submitBtn.innerHTML = originalHTML;
         submitBtn.disabled = false;
     }
 }
 
 function clearAdminFilters() {
     document.getElementById('adminClassSelect').value = '';
-    document.getElementById('adminSubjectSelect').value = '';
-    document.getElementById('adminSubjectSelect').disabled = true;
     document.getElementById('adminSubjectSelect').innerHTML = '<option value="">-- Select Subject --</option>';
-    
+    document.getElementById('adminSubjectSelect').disabled = true;
     document.getElementById('adminAttendanceView').classList.add('hidden');
     document.getElementById('adminDefaultView').classList.remove('hidden');
 }
 
 // =============================
-// 👨‍💼 Admin Status Functions
+// 👨‍💼 Admin Status Functions (OPTIMIZED)
 // =============================
 async function loadAllUsersStatus() {
     try {
         const userSelect = document.getElementById('userSelect');
-        const noUserSelected = document.getElementById('noUserSelected');
-        const selectedUserStatus = document.getElementById('selectedUserStatus');
         
-        userSelect.innerHTML = '<option value="">-- Loading Users... --</option>';
+        userSelect.innerHTML = '<option value="">-- Loading... --</option>';
         
-        const users = await api.getSheet("user_credentials");
+        const users = await getCachedUsers();
         
-        userSelect.innerHTML = '<option value="">-- Select User --</option>';
-        
-        if (users && Array.isArray(users)) {
+        let userHTML = '<option value="">-- Select User --</option>';
+        if (Array.isArray(users)) {
             const students = users.filter(user => user.role === 'student');
             students.forEach(student => {
-                const option = document.createElement('option');
-                option.value = student.username;
-                option.textContent = `${student.full_name || student.username} (Class ${student.class || 'N/A'})`;
-                userSelect.appendChild(option);
+                userHTML += `<option value="${student.username}">${student.full_name || student.username} (Class ${student.class || 'N/A'})</option>`;
             });
         }
+        userSelect.innerHTML = userHTML;
         
-        const newUserSelect = userSelect.cloneNode(true);
-        userSelect.parentNode.replaceChild(newUserSelect, userSelect);
-        
-        document.getElementById('userSelect').addEventListener('change', async function() {
+        // Attach change handler
+        userSelect.onchange = async function() {
             const selectedUsername = this.value;
+            const noUserSelected = document.getElementById('noUserSelected');
+            const selectedUserStatus = document.getElementById('selectedUserStatus');
             
             if (selectedUsername) {
                 noUserSelected.classList.add('hidden');
@@ -1111,13 +1053,13 @@ async function loadAllUsersStatus() {
                 noUserSelected.classList.remove('hidden');
                 selectedUserStatus.classList.add('hidden');
             }
-        });
+        };
         
-        noUserSelected.classList.remove('hidden');
-        selectedUserStatus.classList.add('hidden');
+        document.getElementById('noUserSelected').classList.remove('hidden');
+        document.getElementById('selectedUserStatus').classList.add('hidden');
         
     } catch (error) {
-        console.error('Error loading all users status:', error);
+        console.error('Error loading users:', error);
     }
 }
 
@@ -1126,7 +1068,7 @@ async function loadSelectedUserStatus(username) {
         destroyAllCharts(adminChartInstances);
         destroyAllCharts(adminSubjectChartInstances);
         
-        const users = await api.getSheet("user_credentials");
+        const users = await getCachedUsers();
         const user = users.find(u => u.username === username);
         
         if (!user) {
@@ -1136,63 +1078,50 @@ async function loadSelectedUserStatus(username) {
         
         document.getElementById('selectedUserName').textContent = user.full_name || user.username;
         document.getElementById('selectedUserInfo').textContent = 
-            `Username: ${user.username} | Class: ${user.class || 'Not Assigned'} | Role: ${user.role}`;
+            `Username: ${user.username} | Class: ${user.class || 'N/A'} | Role: ${user.role}`;
         
-        // Load all attendance data for this student from subject sheets
+        // Get subjects and fetch attendance in PARALLEL
         const subjects = await getUserSubjects(user);
-        let allAttendance = [];
+        const sheetNames = subjects.map(s => `attendance_${user.class}_${s}`);
+        const allData = await api.getSheets(sheetNames);
         
-        for (const subject of subjects) {
-            const sheetName = `attendance_${user.class}_${subject}`;
-            const attendance = await api.getSheet(sheetName);
-            
+        let allAttendance = [];
+        subjects.forEach((subject, index) => {
+            const attendance = allData[sheetNames[index]];
             if (Array.isArray(attendance)) {
-                const studentRecords = attendance.filter(r => 
-                    r.username === username
-                );
+                const studentRecords = attendance.filter(r => r.username === username);
                 allAttendance = allAttendance.concat(studentRecords);
             }
-        }
+        });
         
+        // Render charts in parallel
         await Promise.all([
-            loadOverallAttendancePieChart(allAttendance, 'adminOverallAttendanceChart', 'adminOverallStats', adminChartInstances, 'overallAttendance'),
-            loadSubjectPieCharts(allAttendance, 'adminSubjectPieCharts', adminSubjectChartInstances)
+            renderOverallChart(allAttendance, 'adminOverallAttendanceChart', 'adminOverallStats', adminChartInstances, 'overallAttendance'),
+            renderSubjectCharts(allAttendance, 'adminSubjectPieCharts', adminSubjectChartInstances)
         ]);
         
     } catch (error) {
-        console.error('Error loading selected user status:', error);
+        console.error('Error loading user status:', error);
     }
 }
 
 async function getUserSubjects(user) {
-    // Try to get subjects from user data
     if (user.subjects) {
         const subjectsStr = user.subjects.toString().trim();
-        // Try bracket format
         const bracketMatch = subjectsStr.match(/\(\d+-([^)]+)\)/);
         if (bracketMatch) {
             const subjects = bracketMatch[1].toLowerCase();
-            if (subjects === 'all') {
-                return ['quaf', 'arabic_wing', 'urdu_wing', 'english_wing', 'malayalam_wing', 
-                        'media_wing', 'sigma_wing', 'art_wing', 'oration_wing', 'gk_wing', 
-                        'himaya_wing', 'class', 'swalah'];
-            }
+            if (subjects === 'all') return getDefaultSubjects();
             return subjects.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
         }
-        // Simple comma-separated
         return subjectsStr.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
     }
     
-    // Fallback: get from admin's assignment
     if (currentUser.adminSubjects && user.class) {
-        const classSubjects = currentUser.adminSubjects[user.class];
-        if (classSubjects) return classSubjects;
+        return currentUser.adminSubjects[user.class] || getDefaultSubjects();
     }
     
-    // Default subjects
-    return ['quaf', 'arabic_wing', 'urdu_wing', 'english_wing', 'malayalam_wing', 
-            'media_wing', 'sigma_wing', 'art_wing', 'oration_wing', 'gk_wing', 
-            'himaya_wing', 'class', 'swalah'];
+    return getDefaultSubjects();
 }
 
 // =============================
@@ -1200,10 +1129,8 @@ async function getUserSubjects(user) {
 // =============================
 function openChangePasswordModal() {
     document.getElementById('profileMenu').classList.add('hidden');
-    
     const modal = document.getElementById('changePasswordModal');
     modal.classList.remove('hidden');
-    
     document.getElementById('changePasswordForm').reset();
     document.getElementById('changePasswordError').classList.add('hidden');
     document.getElementById('changePasswordSuccess').classList.add('hidden');
@@ -1233,7 +1160,7 @@ async function changePassword(event) {
     }
     
     if (newPassword.length < 6) {
-        showChangePasswordError('New password must be at least 6 characters long');
+        showChangePasswordError('New password must be at least 6 characters');
         return;
     }
     
@@ -1242,34 +1169,32 @@ async function changePassword(event) {
         return;
     }
     
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Changing Password...';
+    const originalHTML = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Changing...';
     submitBtn.disabled = true;
     
     try {
         const users = await api.getSheet("user_credentials", false);
         
-        if (!users || users.error || !Array.isArray(users)) {
+        if (!Array.isArray(users)) {
             throw new Error('Failed to fetch user data');
         }
         
-        const user = users.find(u => {
-            if (!u.username || !u.password) return false;
-            return String(u.username).toLowerCase().trim() === String(currentUser.username).toLowerCase().trim() && 
-                   String(u.password).trim() === String(currentPassword).trim();
-        });
+        const user = users.find(u => 
+            String(u.username).toLowerCase().trim() === String(currentUser.username).toLowerCase().trim() && 
+            String(u.password).trim() === String(currentPassword).trim()
+        );
         
         if (!user) {
             throw new Error('Current password is incorrect');
         }
         
-        const rowData = [currentUser.username, newPassword, 'password_update', new Date().toISOString()];
-        const updateResult = await api.addRow("password_updates", rowData);
+        const updateResult = await api.addBatchRows("password_updates", 
+            [[currentUser.username, newPassword, 'password_update', new Date().toISOString()]]
+        );
         
-        if (updateResult && updateResult.success) {
-            showChangePasswordSuccess('Password changed successfully! You will be logged out in 3 seconds.');
-            document.getElementById('changePasswordForm').reset();
-            
+        if (updateResult?.success) {
+            showChangePasswordSuccess('Password changed! Logging out in 3 seconds...');
             setTimeout(() => {
                 closeChangePasswordModal();
                 logout();
@@ -1279,10 +1204,9 @@ async function changePassword(event) {
         }
         
     } catch (error) {
-        console.error('Error changing password:', error);
         showChangePasswordError(error.message);
     } finally {
-        submitBtn.innerHTML = originalText;
+        submitBtn.innerHTML = originalHTML;
         submitBtn.disabled = false;
     }
 }
@@ -1291,46 +1215,61 @@ function showChangePasswordError(message) {
     const errorDiv = document.getElementById('changePasswordError');
     errorDiv.textContent = message;
     errorDiv.classList.remove('hidden');
-    errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function showChangePasswordSuccess(message) {
     const successDiv = document.getElementById('changePasswordSuccess');
     successDiv.textContent = message;
     successDiv.classList.remove('hidden');
-    successDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 // =============================
 // 🔧 Utility Functions
 // =============================
 function getSubjectIcon(subject) {
-    const subjectLower = subject.toLowerCase();
-    if (subjectLower.includes('quaf')) return 'fas fa-scroll';
-    if (subjectLower.includes('arabic')) return 'fas fa-language';
-    if (subjectLower.includes('urdu')) return 'fas fa-language';
-    if (subjectLower.includes('english')) return 'fas fa-language';
-    if (subjectLower.includes('malayalam')) return 'fas fa-language';
-    if (subjectLower.includes('media')) return 'fas fa-video';
-    if (subjectLower.includes('sigma')) return 'fas fa-brain';
-    if (subjectLower.includes('art')) return 'fas fa-palette';
-    if (subjectLower.includes('oration')) return 'fas fa-microphone';
-    if (subjectLower.includes('gk')) return 'fas fa-globe';
-    if (subjectLower.includes('himaya')) return 'fas fa-shield-alt';
-    if (subjectLower.includes('class')) return 'fas fa-chalkboard';
-    if (subjectLower.includes('swalah')) return 'fas fa-pray';
-    return 'fas fa-book';
+    const icons = {
+        'quaf': 'fas fa-scroll',
+        'arabic_wing': 'fas fa-language',
+        'arabic': 'fas fa-language',
+        'urdu_wing': 'fas fa-language',
+        'urdu': 'fas fa-language',
+        'english_wing': 'fas fa-language',
+        'english': 'fas fa-language',
+        'malayalam_wing': 'fas fa-language',
+        'malayalam': 'fas fa-language',
+        'media_wing': 'fas fa-video',
+        'media': 'fas fa-video',
+        'sigma_wing': 'fas fa-brain',
+        'sigma': 'fas fa-brain',
+        'art_wing': 'fas fa-palette',
+        'art': 'fas fa-palette',
+        'oration_wing': 'fas fa-microphone',
+        'oration': 'fas fa-microphone',
+        'gk_wing': 'fas fa-globe',
+        'gk': 'fas fa-globe',
+        'himaya_wing': 'fas fa-shield-alt',
+        'himaya': 'fas fa-shield-alt',
+        'class': 'fas fa-chalkboard',
+        'swalah': 'fas fa-pray'
+    };
+    return icons[subject.toLowerCase()] || 'fas fa-book';
 }
 
+const dateFormatCache = new Map();
+
 function formatDate(dateString) {
+    if (dateFormatCache.has(dateString)) return dateFormatCache.get(dateString);
+    
     try {
         const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
+        const formatted = date.toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'
         });
-    } catch (e) {
+        dateFormatCache.set(dateString, formatted);
+        return formatted;
+    } catch {
         return dateString;
     }
 }
@@ -1357,61 +1296,156 @@ function generateSkeleton(count) {
 // 🎯 Event Listeners & Initialization
 // =============================
 document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('signupForm').addEventListener('submit', function(e) {
+    // Use event delegation for form submissions
+    document.getElementById('signupForm').onsubmit = function(e) {
         e.preventDefault();
         submitSignup();
-    });
+    };
     
-    document.getElementById('loginForm').addEventListener('submit', function(e) {
+    document.getElementById('loginForm').onsubmit = function(e) {
         e.preventDefault();
         login();
-    });
+    };
     
-    document.getElementById('changePasswordForm').addEventListener('submit', changePassword);
+    document.getElementById('changePasswordForm').onsubmit = changePassword;
     
-    document.getElementById('changePasswordModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeChangePasswordModal();
-        }
-    });
+    document.getElementById('changePasswordModal').onclick = function(e) {
+        if (e.target === this) closeChangePasswordModal();
+    };
     
     document.getElementById('attendanceDate').value = today;
-    document.getElementById('attendanceDate').addEventListener('change', function() {
+    document.getElementById('attendanceDate').onchange = function() {
         const selectedClass = document.getElementById('adminClassSelect').value;
         const selectedSubject = document.getElementById('adminSubjectSelect').value;
         if (selectedClass && selectedSubject) {
             loadAdminAttendanceView(selectedClass, selectedSubject, this.value);
         }
-    });
+    };
+
+    // Initialize signup section
+    initializeSignup();
 });
 
+// Signup functions
+function showSignup() {
+    document.getElementById('loginSection').classList.add('hidden');
+    document.getElementById('signupSection').classList.remove('hidden');
+    hideError();
+}
+
+function showLogin() {
+    document.getElementById('signupSection').classList.add('hidden');
+    document.getElementById('loginSection').classList.remove('hidden');
+    hideSignupError();
+    hideSignupSuccess();
+}
+
+function showSignupError(message) {
+    const errorDiv = document.getElementById('signupError');
+    errorDiv.textContent = message;
+    errorDiv.classList.remove('hidden');
+}
+
+function hideSignupError() {
+    document.getElementById('signupError').classList.add('hidden');
+}
+
+function showSignupSuccess(message) {
+    const successDiv = document.getElementById('signupSuccess');
+    successDiv.textContent = message;
+    successDiv.classList.remove('hidden');
+}
+
+function hideSignupSuccess() {
+    document.getElementById('signupSuccess').classList.add('hidden');
+}
+
+async function submitSignup() {
+    const fields = ['signupName', 'signupPhone', 'signupState', 'signupDistrict', 'signupPlace', 'signupPO', 'signupPinCode'];
+    const values = {};
+    
+    fields.forEach(id => {
+        values[id] = document.getElementById(id).value.trim();
+    });
+    
+    const gmail = document.getElementById('signupGmail').value.trim();
+    
+    if (!values.signupName || !values.signupPhone || !values.signupState || 
+        !values.signupDistrict || !values.signupPlace || !values.signupPO || !values.signupPinCode) {
+        showSignupError('Please fill in all required fields');
+        return;
+    }
+    
+    if (!/^\d{6}$/.test(values.signupPinCode)) {
+        showSignupError('Please enter a valid 6-digit pin code');
+        return;
+    }
+
+    const signupBtn = document.querySelector('#signupForm button[type="submit"]');
+    const originalHTML = signupBtn.innerHTML;
+    signupBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating...';
+    signupBtn.disabled = true;
+
+    try {
+        const rowData = [
+            values.signupName,
+            values.signupPhone,
+            gmail || '',
+            values.signupState,
+            values.signupDistrict,
+            values.signupPlace,
+            values.signupPO,
+            values.signupPinCode,
+            new Date().toISOString().split('T')[0]
+        ];
+
+        const result = await api.addBatchRows('registration', [rowData]);
+
+        if (result?.success) {
+            showSignupSuccess('Account created! Contact admin for login credentials.');
+            document.getElementById('signupForm').reset();
+            hideSignupError();
+        } else {
+            throw new Error(result?.error || 'Unknown error');
+        }
+    } catch (error) {
+        showSignupError('Registration failed: ' + error.message);
+    } finally {
+        signupBtn.innerHTML = originalHTML;
+        signupBtn.disabled = false;
+    }
+}
+
+function initializeSignup() {
+    showLogin();
+}
+
+// Debounced resize handler
 let resizeTimeout;
-window.addEventListener('resize', function() {
+window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(function() {
+    resizeTimeout = setTimeout(() => {
         const allCharts = {
             ...chartInstances,
             ...adminChartInstances,
             ...studentSubjectChartInstances,
             ...adminSubjectChartInstances
         };
-        Object.values(allCharts).forEach(chart => {
-            if (chart && chart.resize) chart.resize();
-        });
+        for (const chart of Object.values(allCharts)) {
+            chart?.resize?.();
+        }
     }, 250);
 });
 
-document.addEventListener("contextmenu", function (e) {
-    e.preventDefault();
-});
-
-document.addEventListener("keydown", function (e) {
+// Security - prevent dev tools
+document.addEventListener("contextmenu", e => e.preventDefault());
+document.addEventListener("keydown", e => {
     if (e.key === "F12") e.preventDefault();
     if (e.ctrlKey && e.shiftKey && (e.key === "I" || e.key === "J" || e.key === "C")) e.preventDefault();
-    if (e.ctrlKey && (e.key === "u" || e.key === "U")) e.preventDefault();
-    if (e.ctrlKey && (e.key === "s" || e.key === "S")) e.preventDefault();
+    if (e.ctrlKey && (e.key === "u" || e.key === "U" || e.key === "s" || e.key === "S")) e.preventDefault();
 });
 
+// Initialize app
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
@@ -1419,10 +1453,7 @@ if (document.readyState === 'loading') {
 }
 
 function initializeApp() {
-    console.log('Initializing QUAF Attendance System...');
+    console.log('%c🚀 QUAF Attendance System v2.0 - Optimized', 'color: #059669; font-size: 16px; font-weight: bold;');
+    console.log('%c⚡ Parallel API calls | Smart caching | Instant chart rendering', 'color: #1e40af; font-size: 12px;');
     showLogin();
-    console.log('System initialized successfully!');
 }
-
-console.log('%c📅 QUAF Attendance System Loaded Successfully! 📅', 'color: #059669; font-size: 16px; font-weight: bold;');
-console.log('%cAttendance Management System - Subject-Based Sheets', 'color: #1e40af; font-size: 12px;');
