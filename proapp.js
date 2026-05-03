@@ -5,7 +5,6 @@ let chartInstances = {};
 let adminChartInstances = {};
 let selectedClassForModal = null;
 let selectedSubjectForModal = null;
-let pdfUploadsData = {}; // Cache for uploads data
 
 // Cache for better performance
 let dataCache = {
@@ -17,14 +16,14 @@ let dataCache = {
 };
 
 // =============================
-// 📊 Google Sheets Integration
+// 📊 Google Sheets Integration (OPTIMIZED)
 // =============================
 class GoogleSheetsAPI {
     constructor() {
-        this.apiUrl = "https://script.google.com/macros/s/AKfycbyvTwJTrnOKVv7ey-rxGw_JcQVYTc2l8JvORb2LKT1v-IyeWOqOS3jH8GQat0Oorakx/exec";
+        this.apiUrl = "https://script.google.com/macros/s/AKfycbzR_EY5MDJOfv7RRyE2_mIjZ3eM3_jYJXJIeScJEWGFs2LYavTc06b6w60RMyHNz-99/exec";
         this.cache = new Map();
         this.localCache = this.initLocalCache();
-        this.cacheTimeout = 30 * 1000;
+        this.cacheTimeout = 30 * 1000; // 30 seconds only
         this.requestQueue = [];
         this.processing = false;
     }
@@ -50,6 +49,7 @@ class GoogleSheetsAPI {
         const cacheKey = sheetName;
         const now = Date.now();
         
+        // Check in-memory cache first (fastest)
         if (useCache && this.cache.has(cacheKey)) {
             const cached = this.cache.get(cacheKey);
             if (now - cached.timestamp < this.cacheTimeout) {
@@ -57,10 +57,11 @@ class GoogleSheetsAPI {
             }
         }
         
+        // Check localStorage cache (fast)
         if (useCache && this.localCache[cacheKey]) {
             const cached = this.localCache[cacheKey];
-            if (now - cached.timestamp < 5 * 60 * 1000) {
-                this.cache.set(cacheKey, cached);
+            if (now - cached.timestamp < 5 * 60 * 1000) { // 5 minutes for localStorage
+                this.cache.set(cacheKey, cached); // Promote to memory cache
                 return cached.data;
             }
         }
@@ -77,6 +78,7 @@ class GoogleSheetsAPI {
             
             const data = await response.json();
             
+            // Cache in both memory and localStorage
             const cacheData = { data, timestamp: now };
             if (useCache) {
                 this.cache.set(cacheKey, cacheData);
@@ -91,6 +93,7 @@ class GoogleSheetsAPI {
         }
     }
 
+    // Batch multiple sheet requests
     async getBatchSheets(sheetNames) {
         const promises = sheetNames.map(name => this.getSheet(name));
         const results = await Promise.all(promises);
@@ -120,6 +123,7 @@ class GoogleSheetsAPI {
             
             const result = await response.json();
             
+            // Invalidate related caches
             this.cache.delete(sheetName);
             delete this.localCache[sheetName];
             this.saveLocalCache();
@@ -143,6 +147,7 @@ class GoogleSheetsAPI {
             
             const result = await response.json();
             
+            // Clear user credentials cache since password changed
             this.cache.delete("user_credentials");
             delete this.localCache["user_credentials"];
             this.saveLocalCache();
@@ -153,6 +158,7 @@ class GoogleSheetsAPI {
         }
     }
 
+    // Alternative method using PUT request
     async updatePasswordPut(username, newPassword) {
         try {
             const response = await fetch(`${this.apiUrl}?action=updatePassword&username=${encodeURIComponent(username)}&newPassword=${encodeURIComponent(newPassword)}`, {
@@ -161,6 +167,7 @@ class GoogleSheetsAPI {
             
             const result = await response.json();
             
+            // Clear user credentials cache since password changed
             this.cache.delete("user_credentials");
             delete this.localCache["user_credentials"];
             this.saveLocalCache();
@@ -175,7 +182,61 @@ class GoogleSheetsAPI {
 const api = new GoogleSheetsAPI();
 
 // =============================
-// 🔑 Authentication
+// 👤 Profile Picture Functions
+// =============================
+function toggleProfileMenu() {
+    const profileMenu = document.getElementById('profileMenu');
+    profileMenu.classList.toggle('hidden');
+}
+
+function showProfileFallback(img) {
+    const fallback = document.getElementById('profileFallback');
+    img.style.display = 'none';
+    fallback.classList.remove('hidden');
+}
+
+function loadUserProfile(username) {
+    const profilePic = document.getElementById('profilePic');
+    const profileName = document.getElementById('profileName');
+    const profileUsername = document.getElementById('profileUsername');
+    const profileFallback = document.getElementById('profileFallback');
+    
+    // Set profile picture with fallback chain
+    profilePic.src = `https://quaf.tech/pic/${username}.png`;
+    profilePic.onerror = function() {
+        this.onerror = function() {
+            this.onerror = function() {
+                // All formats failed, show fallback
+                this.style.display = 'none';
+                profileFallback.classList.remove('hidden');
+            };
+            this.src = `https://quaf.tech/pic/${username}.jpeg`;
+        };
+        this.src = `https://quaf.tech/pic/${username}.jpg`;
+    };
+    
+    profilePic.style.display = 'block';
+    profileFallback.classList.add('hidden');
+    
+    // Set profile info
+    if (currentUser) {
+        profileName.textContent = currentUser.name;
+        profileUsername.textContent = `@${username}`;
+    }
+}
+
+// Close profile menu when clicking outside
+document.addEventListener('click', function(event) {
+    const profileContainer = event.target.closest('.profile-pic-container');
+    const profileMenu = document.getElementById('profileMenu');
+    
+    if (!profileContainer && profileMenu && !profileMenu.classList.contains('hidden')) {
+        profileMenu.classList.add('hidden');
+    }
+});
+
+// =============================
+// 🔑 Authentication (OPTIMIZED)
 // =============================
 async function login() {
     const username = document.getElementById('username').value.trim();
@@ -186,7 +247,7 @@ async function login() {
         return;
     }
 
-    const loginBtn = document.querySelector('#loginForm button[type="submit"]');
+    const loginBtn = document.querySelector('button[type="submit"]');
     const originalText = loginBtn.innerHTML;
     loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Signing In...';
     loginBtn.disabled = true;
@@ -199,7 +260,7 @@ async function login() {
             return;
         }
         
-        const user = users.find(u => String(u.username).toLowerCase().trim() === username.toLowerCase() && String(u.password).trim() === password);
+        const user = users.find(u => u.username === username && u.password === password);
 
         if (user) {
             currentUser = {
@@ -211,16 +272,20 @@ async function login() {
                 userId: user.username
             };
 
+            // Show dashboard immediately
             document.getElementById('loginPage').classList.add('hidden');
             document.getElementById('dashboardContainer').classList.remove('hidden');
             document.getElementById('welcomeUser').textContent = `Welcome, ${currentUser.name}`;
 
+            // Load user profile picture
             loadUserProfile(username);
 
+            // Pre-load common data in background
             if (currentUser.role === 'admin') {
                 document.getElementById('studentNav').classList.add('hidden');
                 document.getElementById('adminNav').classList.remove('hidden');
                 
+                // Load admin data and show page simultaneously
                 Promise.all([
                     loadAdminData(),
                     showPage('adminTasks')
@@ -229,12 +294,14 @@ async function login() {
                 document.getElementById('studentNav').classList.remove('hidden');
                 document.getElementById('adminNav').classList.add('hidden');
                 
+                // Load tasks and show page simultaneously
                 Promise.all([
                     loadTasks(),
                     showPage('tasks')
                 ]);
             }
             
+            // Pre-load critical data in background
             setTimeout(() => preloadCriticalData(), 100);
             
             hideError();
@@ -263,14 +330,15 @@ function logout() {
     currentUser = null;
     selectedClassForModal = null;
     selectedSubjectForModal = null;
-    pdfUploadsData = {};
     api.clearCache();
     
+    // Clean up chart instances
     Object.values(chartInstances).forEach(chart => {
         if (chart) chart.destroy();
     });
     chartInstances = {};
     
+    // Clean up admin chart instances
     Object.values(adminChartInstances).forEach(chart => {
         if (chart) chart.destroy();
     });
@@ -285,6 +353,7 @@ function logout() {
     showLogin();
 }
 
+// Signup functions
 function showSignup() {
     document.getElementById('loginSection').classList.add('hidden');
     document.getElementById('signupSection').classList.remove('hidden');
@@ -333,11 +402,13 @@ async function submitSignup() {
         return;
     }
 
+    // Validate pin code
     if (!/^\d{6}$/.test(pinCode)) {
         showSignupError('Please enter a valid 6-digit pin code');
         return;
     }
 
+    // Show loading state
     const signupBtn = document.querySelector('#signupForm button[type="submit"]');
     const originalText = signupBtn.innerHTML;
     signupBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating Account...';
@@ -353,7 +424,7 @@ async function submitSignup() {
             place,
             po,
             pinCode,
-            new Date().toISOString().split('T')[0]
+            new Date().toISOString().split('T')[0] // Registration date
         ];
 
         const result = await api.addRow('registration', rowData);
@@ -375,28 +446,26 @@ async function submitSignup() {
 }
 
 // =============================
-// 📍 Navigation
+// 📍 Navigation (OPTIMIZED)
 // =============================
 async function showPage(page) {
     document.querySelectorAll('.page-content').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.classList.remove('border-green-500', 'text-green-600', 'border-blue-500', 'text-blue-600', 'border-purple-500', 'text-purple-600');
+        btn.classList.remove('border-green-500', 'text-green-600', 'border-blue-500', 'text-blue-600');
         btn.classList.add('border-transparent');
     });
 
     document.getElementById(page + 'Page').classList.remove('hidden');
     
+    // Find the clicked button and highlight it
     const clickedBtn = Array.from(document.querySelectorAll('.nav-btn')).find(btn => {
         const btnText = btn.textContent.toLowerCase();
-        if (page === 'adminUploads') return btnText.includes('uploads');
         return btnText.includes(page.replace('admin', '').toLowerCase()) || 
                (page === 'adminStatus' && btnText.includes('all status'));
     });
     
     if (clickedBtn) {
-        if (page === 'adminUploads') {
-            clickedBtn.classList.add('border-purple-500', 'text-purple-600');
-        } else if (currentUser && currentUser.role === 'admin') {
+        if (currentUser && currentUser.role === 'admin') {
             clickedBtn.classList.add('border-blue-500', 'text-blue-600');
         } else {
             clickedBtn.classList.add('border-green-500', 'text-green-600');
@@ -405,6 +474,7 @@ async function showPage(page) {
 
     currentPage = page;
 
+    // Load page-specific data with optimized loading
     if (page === 'status') {
         loadStatusCharts();
     } else if (page === 'adminTasks') {
@@ -415,122 +485,16 @@ async function showPage(page) {
         }
     } else if (page === 'adminStatus') {
         await loadAllUsersStatus();
-    } else if (page === 'adminUploads') {
-        await loadAdminUploadsPage();
     }
 }
 
 // =============================
-// 📤 PDF Upload Functions
-// =============================
-
-// Upload PDF for a task
-async function uploadPDFForTask(taskId, subject, classNum) {
-    const uploadBtn = document.getElementById(`upload-btn-${taskId}`);
-    const uploadStatus = document.getElementById(`upload-status-${taskId}`);
-    
-    // Create file input dynamically
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = '.pdf';
-    
-    fileInput.onchange = async function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        // Validate file type
-        if (!file.name.toLowerCase().endsWith('.pdf')) {
-            alert('Please upload a PDF file only.');
-            return;
-        }
-        
-        // Validate file size (max 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-            alert('File size must be less than 10MB.');
-            return;
-        }
-        
-        // Disable button and show loading
-        uploadBtn.disabled = true;
-        uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Uploading...';
-        
-        try {
-            // Convert file to base64
-            const base64Data = await fileToBase64(file);
-            
-            // Save to Google Sheets
-            const uploadData = [
-                taskId,
-                subject,
-                classNum,
-                currentUser.username,
-                currentUser.name || currentUser.username,
-                file.name,
-                base64Data,
-                new Date().toISOString()
-            ];
-            
-            const result = await api.addRow(`${currentUser.username}_pdf_uploads`, uploadData);
-            
-            if (result && (result.success || result.message?.includes('Success'))) {
-                // Update button state
-                uploadBtn.classList.add('uploaded');
-                uploadBtn.innerHTML = '<i class="fas fa-check mr-1"></i>Already Uploaded';
-                uploadBtn.disabled = true;
-                uploadBtn.title = 'PDF already uploaded for this task';
-                
-                if (uploadStatus) {
-                    uploadStatus.innerHTML = `<span class="text-green-600"><i class="fas fa-check-circle mr-1"></i>Uploaded: ${file.name}</span>`;
-                }
-                
-                // Update local cache
-                if (!pdfUploadsData[currentUser.username]) {
-                    pdfUploadsData[currentUser.username] = {};
-                }
-                pdfUploadsData[currentUser.username][taskId] = {
-                    fileName: file.name,
-                    uploadDate: new Date().toISOString()
-                };
-            } else {
-                throw new Error(result?.error || 'Failed to save upload');
-            }
-        } catch (error) {
-            console.error('Error uploading PDF:', error);
-            alert('Error uploading PDF: ' + error.message);
-            uploadBtn.disabled = false;
-            uploadBtn.innerHTML = '<i class="fas fa-upload mr-1"></i>Upload PDF';
-        }
-    };
-    
-    fileInput.click();
-}
-
-// Convert file to base64
-function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = (error) => reject(error);
-    });
-}
-
-// Download PDF from base64
-function downloadPDF(base64Data, fileName) {
-    const link = document.createElement('a');
-    link.href = base64Data;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
-
-// =============================
-// ✅ Tasks (with PDF upload support)
+// ✅ Tasks (SUPER OPTIMIZED)
 // =============================
 async function loadTasks() {
     const tasksContainer = document.getElementById('subjectCards');
     
+    // Show skeleton immediately
     tasksContainer.innerHTML = `
         <div class="animate-pulse space-y-4">
             ${Array(3).fill(0).map(() => `
@@ -557,31 +521,18 @@ async function loadTasks() {
             
             document.getElementById('userClass').textContent = `Class ${currentUser.class}`;
             
-            // Load tasks, progress, and PDF uploads in parallel
-            const [tasks, progress, pdfUploads] = await Promise.all([
+            // Load data in parallel
+            const [tasks, progress] = await Promise.all([
                 api.getSheet(`${currentUser.class}_tasks_master`),
-                api.getSheet(`${currentUser.username}_progress`),
-                api.getSheet(`${currentUser.username}_pdf_uploads`)
+                api.getSheet(`${currentUser.username}_progress`)
             ]);
-            
-            // Cache PDF uploads data
-            pdfUploadsData[currentUser.username] = {};
-            if (Array.isArray(pdfUploads)) {
-                pdfUploads.forEach(upload => {
-                    if (upload.task_id) {
-                        pdfUploadsData[currentUser.username][upload.task_id] = {
-                            fileName: upload.file_name,
-                            uploadDate: upload.upload_date
-                        };
-                    }
-                });
-            }
             
             if (!tasks || tasks.error || tasks.length === 0) {
                 tasksContainer.innerHTML = '<p class="text-gray-500 text-center py-8">No tasks found for your class.</p>';
                 return;
             }
 
+            // Pre-process data for faster rendering
             const progressMap = new Map();
             if (Array.isArray(progress)) {
                 progress.forEach(p => {
@@ -594,6 +545,7 @@ async function loadTasks() {
                 });
             }
 
+            // Group tasks by subject with optimized loop
             const tasksBySubject = {};
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -607,6 +559,7 @@ async function loadTasks() {
                     };
                 }
                 
+                // Pre-calculate status
                 const userProgress = progressMap.get(String(task.task_id));
                 const completed = !!userProgress;
                 if (completed) tasksBySubject[subject].completedCount++;
@@ -642,6 +595,7 @@ async function loadTasks() {
                 });
             });
 
+            // Use DocumentFragment for faster DOM manipulation
             const fragment = document.createDocumentFragment();
 
             Object.entries(tasksBySubject).forEach(([subject, subjectData]) => {
@@ -669,46 +623,23 @@ async function loadTasks() {
                     </div>
                     
                     <div class="tasks-container" id="tasks-${subject}">
-                        ${subjectTasks.map(task => {
-                            const hasUpload = pdfUploadsData[currentUser.username] && 
-                                             pdfUploadsData[currentUser.username][task.task_id];
-                            const uploadInfo = hasUpload ? pdfUploadsData[currentUser.username][task.task_id] : null;
-                            
-                            return `
-                                <div class="task-item">
-                                    <div class="task-header">
-                                        <span class="task-id-badge">${task.task_id}</span>
-                                        <span class="task-status ${task.statusClass}">${task.statusText}</span>
-                                    </div>
-                                    <h4 class="task-title">${task.title}</h4>
-                                    <p class="task-description">${task.description}</p>
-                                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2">
-                                        <p class="task-due-date">
-                                            <i class="fas fa-calendar-alt"></i>
-                                            Due: ${task.dueDateFormatted}
-                                        </p>
-                                        ${task.completed && task.grade ? `<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Score: ${task.grade}</span>` : ''}
-                                    </div>
-                                    
-                                    <!-- PDF Upload Section -->
-                                    <div class="upload-section">
-                                        <button id="upload-btn-${task.task_id}" 
-                                                class="upload-btn ${hasUpload ? 'uploaded' : ''}"
-                                                ${hasUpload ? 'disabled title="PDF already uploaded for this task"' : ''}
-                                                onclick="event.stopPropagation(); uploadPDFForTask('${task.task_id}', '${subject}', '${currentUser.class}')">
-                                            ${hasUpload ? 
-                                                '<i class="fas fa-check mr-1"></i>Already Uploaded' : 
-                                                '<i class="fas fa-upload mr-1"></i>Upload PDF'}
-                                        </button>
-                                        <div class="upload-status" id="upload-status-${task.task_id}">
-                                            ${uploadInfo ? 
-                                                `<span class="text-green-600"><i class="fas fa-check-circle mr-1"></i>Uploaded: ${uploadInfo.fileName}</span>` : 
-                                                ''}
-                                        </div>
-                                    </div>
+                        ${subjectTasks.map(task => `
+                            <div class="task-item">
+                                <div class="task-header">
+                                    <span class="task-id-badge">${task.task_id}</span>
+                                    <span class="task-status ${task.statusClass}">${task.statusText}</span>
                                 </div>
-                            `;
-                        }).join('')}
+                                <h4 class="task-title">${task.title}</h4>
+                                <p class="task-description">${task.description}</p>
+                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2">
+                                    <p class="task-due-date">
+                                        <i class="fas fa-calendar-alt"></i>
+                                        Due: ${task.dueDateFormatted}
+                                    </p>
+                                    ${task.completed && task.grade ? `<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Score: ${task.grade}</span>` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
                     </div>
                 `;
                 fragment.appendChild(subjectCard);
@@ -724,12 +655,14 @@ async function loadTasks() {
     }
 }
 
+// Function to toggle subject task visibility
 function toggleSubjectTasks(subject) {
     const tasksContainer = document.getElementById(`tasks-${subject}`);
     const arrow = document.getElementById(`arrow-${subject}`);
     
     if (tasksContainer && arrow) {
         if (!tasksContainer.classList.contains('expanded')) {
+            // Close all other expanded subjects first
             document.querySelectorAll('.tasks-container.expanded').forEach(container => {
                 if (container !== tasksContainer) {
                     container.classList.remove('expanded');
@@ -741,15 +674,18 @@ function toggleSubjectTasks(subject) {
                 }
             });
             
+            // Open this subject
             tasksContainer.classList.add('expanded');
             arrow.classList.add('expanded');
         } else {
+            // Close this subject
             tasksContainer.classList.remove('expanded');
             arrow.classList.remove('expanded');
         }
     }
 }
 
+// Helper functions for subject icons
 function getSubjectIcon(subject) {
     const subjectLower = subject.toLowerCase();
     if (subjectLower.includes('quaf')) return 'fas fa-scroll';
@@ -769,7 +705,7 @@ function getSubjectIcon(subject) {
 }
 
 // =============================
-// 📊 Status Charts & Progress
+// 📊 Status Charts & Progress (OPTIMIZED)
 // =============================
 async function loadStatusCharts() {
     try {
@@ -794,6 +730,7 @@ async function loadSubjectPointsSummary(progress) {
         
         if (!tasks || tasks.error || tasks.length === 0) return;
         
+        // Group tasks by subject and calculate points
         const subjectStats = {};
         
         tasks.forEach(task => {
@@ -809,6 +746,7 @@ async function loadSubjectPointsSummary(progress) {
             
             subjectStats[subject].totalTasks++;
             
+            // Check if task is completed
             const userTask = Array.isArray(progress) ? progress.find(p => 
                 String(p.item_id) === String(task.task_id) && 
                 p.item_type === "task" && 
@@ -821,10 +759,12 @@ async function loadSubjectPointsSummary(progress) {
             }
         });
         
+        // Calculate total points
         Object.keys(subjectStats).forEach(subject => {
             subjectStats[subject].totalPoints = subjectStats[subject].earnedPoints;
         });
         
+        // Generate subject points grid
         const subjectPointsGrid = document.getElementById('subjectPointsGrid');
         if (!subjectPointsGrid) return;
         
@@ -897,7 +837,7 @@ async function loadTaskChart(progress) {
 }
 
 // =============================
-// 👨‍💼 Admin Functions
+// 👨‍💼 Admin Functions (SUPER OPTIMIZED)
 // =============================
 async function loadAdminData() {
     try {
@@ -905,6 +845,7 @@ async function loadAdminData() {
             let adminClasses = [];
             let adminSubjects = {};
             
+            // Parse classes (optimized)
             if (currentUser.class) {
                 adminClasses = currentUser.class.toString().trim()
                     .split(/[,\s]+/)
@@ -912,6 +853,7 @@ async function loadAdminData() {
                     .filter(c => c && /^\d+$/.test(c));
             }
             
+            // Parse subjects (optimized)
             if (currentUser.subjects && adminClasses.length > 0) {
                 const subjectsStr = currentUser.subjects.toString().trim();
                 const bracketMatches = subjectsStr.match(/\(\d+-[^)]+\)/g);
@@ -937,6 +879,7 @@ async function loadAdminData() {
                 }
             }
             
+            // Pre-load all task sheets in parallel
             const taskSheetPromises = adminClasses.map(classNum => 
                 api.getSheet(`${classNum}_tasks_master`).then(tasks => ({
                     classNum,
@@ -946,6 +889,7 @@ async function loadAdminData() {
             
             const taskResults = await Promise.all(taskSheetPromises);
             
+            // Verify subjects exist and optimize
             taskResults.forEach(({ classNum, tasks }) => {
                 if (tasks.length > 0) {
                     const classSubjects = [...new Set(tasks.map(task => 
@@ -967,6 +911,7 @@ async function loadAdminData() {
             currentUser.adminClasses = adminClasses;
             currentUser.adminSubjects = adminSubjects;
             
+            // Update UI immediately
             const teachingInfo = document.getElementById('teachingSubjects');
             if (teachingInfo) {
                 if (adminClasses.length > 0) {
@@ -980,6 +925,7 @@ async function loadAdminData() {
                 }
             }
             
+            // Load admin tasks UI immediately after data processing
             await loadAdminTasks();
         }
     } catch (error) {
@@ -997,10 +943,12 @@ async function loadAdminTasks() {
     
     if (!adminTaskClassSelect || !adminTaskSubjectSelect) return;
     
+    // Clear existing options
     adminTaskClassSelect.innerHTML = '<option value="">-- Select Class --</option>';
     adminTaskSubjectSelect.innerHTML = '<option value="">-- Select Subject --</option>';
     adminTaskSubjectSelect.disabled = true;
     
+    // Only show admin's assigned classes
     if (currentUser.adminClasses && currentUser.adminClasses.length > 0) {
         currentUser.adminClasses.forEach(classNum => {
             const option = document.createElement('option');
@@ -1017,13 +965,16 @@ async function loadAdminTasks() {
         return;
     }
     
+    // Remove existing event listeners first
     adminTaskClassSelect.removeEventListener('change', handleClassChange);
     adminTaskSubjectSelect.removeEventListener('change', handleSubjectChange);
     
+    // Add event listeners
     adminTaskClassSelect.addEventListener('change', handleClassChange);
     adminTaskSubjectSelect.addEventListener('change', handleSubjectChange);
 }
 
+// Separate event handler functions
 async function handleClassChange() {
     const selectedClass = this.value;
     const subjectSelect = document.getElementById('adminTaskSubjectSelect');
@@ -1081,16 +1032,20 @@ async function handleSubjectChange() {
 
 async function loadAdminClassSubjectData(classNum, subject) {
     try {
+        // Show class subject view
         document.getElementById('adminTasksDefaultView').classList.add('hidden');
         document.getElementById('adminTasksClassSubjectView').classList.remove('hidden');
         
+        // Update selected info
         document.getElementById('selectedClassSubjectInfo').textContent = `Class ${classNum} - ${subject.charAt(0).toUpperCase() + subject.slice(1)}`;
         
+        // Load tasks for this class and subject
         const tasksSheetName = `${classNum}_tasks_master`;
         const tasks = await api.getSheet(tasksSheetName);
         
         const adminClassSubjectTasksList = document.getElementById('adminClassSubjectTasksList');
         
+        // Show skeleton while loading
         adminClassSubjectTasksList.innerHTML = `
             <div class="animate-pulse space-y-3">
                 ${Array(2).fill(0).map(() => `
@@ -1110,6 +1065,7 @@ async function loadAdminClassSubjectData(classNum, subject) {
         if (!tasks || tasks.error || tasks.length === 0) {
             adminClassSubjectTasksList.innerHTML = '<p class="text-gray-500 text-center py-8">No tasks found for this class.</p>';
         } else {
+            // Filter tasks by subject
             const subjectTasks = tasks.filter(task => 
                 task.subject && task.subject.toLowerCase() === subject.toLowerCase()
             );
@@ -1165,6 +1121,7 @@ async function loadAdminClassSubjectData(classNum, subject) {
             }
         }
         
+        // Load students in this class
         await loadAdminClassStudents(classNum);
         
     } catch (error) {
@@ -1178,6 +1135,7 @@ async function loadAdminClassStudents(classNum) {
         const users = await api.getSheet("user_credentials");
         const adminClassStudentsList = document.getElementById('adminClassStudentsList');
         
+        // Show skeleton
         adminClassStudentsList.innerHTML = `
             <div class="animate-pulse grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 ${Array(6).fill(0).map(() => `
@@ -1196,6 +1154,7 @@ async function loadAdminClassStudents(classNum) {
             return;
         }
         
+        // Filter students by class
         const classStudents = users.filter(user => 
             user.role === 'student' && String(user.class) === String(classNum)
         );
@@ -1237,6 +1196,7 @@ async function openStudentTaskModal(username, fullName, classNum) {
         
         title.textContent = `Tasks for ${fullName} - ${selectedSubjectForModal}`;
         
+        // Show skeleton immediately
         content.innerHTML = `
             <div class="animate-pulse space-y-4">
                 ${Array(3).fill(0).map(() => `
@@ -1260,6 +1220,7 @@ async function openStudentTaskModal(username, fullName, classNum) {
         
         modal.classList.remove('hidden');
         
+        // Load student's progress and class tasks in parallel
         const [progress, tasks] = await Promise.all([
             api.getSheet(`${username}_progress`),
             api.getSheet(`${classNum}_tasks_master`)
@@ -1270,6 +1231,7 @@ async function openStudentTaskModal(username, fullName, classNum) {
             return;
         }
         
+        // Filter tasks by the selected subject
         const subjectTasks = selectedSubjectForModal ? 
             tasks.filter(task => task.subject && task.subject.toLowerCase() === selectedSubjectForModal.toLowerCase()) :
             tasks;
@@ -1429,6 +1391,7 @@ async function submitSelectedStudentTasks() {
         alert(`${updatedCount} task(s) marked as completed successfully!`);
         closeStudentTaskModal();
         
+        // Refresh the current view
         const selectedClass = document.getElementById('adminTaskClassSelect').value;
         const selectedSubject = document.getElementById('adminTaskSubjectSelect').value;
         if (selectedClass && selectedSubject) {
@@ -1448,6 +1411,7 @@ function closeStudentTaskModal() {
     document.getElementById('studentTaskModal').classList.add('hidden');
 }
 
+// Clear admin task filters
 function clearAdminTaskFilters() {
     document.getElementById('adminTaskClassSelect').value = '';
     document.getElementById('adminTaskSubjectSelect').value = '';
@@ -1462,7 +1426,7 @@ function clearAdminTaskFilters() {
 }
 
 // =============================
-// 👨‍💼 Admin Status Functions
+// 👨‍💼 Admin Status Functions (OPTIMIZED)
 // =============================
 async function loadAllUsersStatus() {
     try {
@@ -1470,10 +1434,13 @@ async function loadAllUsersStatus() {
         const noUserSelected = document.getElementById('noUserSelected');
         const selectedUserStatus = document.getElementById('selectedUserStatus');
         
+        // Show loading in user select
         userSelect.innerHTML = '<option value="">-- Loading Users... --</option>';
         
+        // Load all users
         const users = await api.getSheet("user_credentials");
         
+        // Clear and populate user select
         userSelect.innerHTML = '<option value="">-- Select User --</option>';
         
         if (users && Array.isArray(users)) {
@@ -1486,9 +1453,11 @@ async function loadAllUsersStatus() {
             });
         }
         
+        // Remove existing event listeners to avoid duplication
         const newUserSelect = userSelect.cloneNode(true);
         userSelect.parentNode.replaceChild(newUserSelect, userSelect);
         
+        // Add event listener for user selection
         document.getElementById('userSelect').addEventListener('change', async function() {
             const selectedUsername = this.value;
             
@@ -1502,6 +1471,7 @@ async function loadAllUsersStatus() {
             }
         });
         
+        // Show no user selected initially
         noUserSelected.classList.remove('hidden');
         selectedUserStatus.classList.add('hidden');
         
@@ -1514,6 +1484,7 @@ async function loadAllUsersStatus() {
 
 async function loadSelectedUserStatus(username) {
     try {
+        // Load user data and progress in parallel
         const [users, progress] = await Promise.all([
             api.getSheet("user_credentials"),
             api.getSheet(`${username}_progress`)
@@ -1526,9 +1497,11 @@ async function loadSelectedUserStatus(username) {
             return;
         }
         
+        // Update user info display
         document.getElementById('selectedUserName').textContent = user.full_name || user.username;
         document.getElementById('selectedUserInfo').textContent = `Username: ${user.username} | Class: ${user.class || 'Not Assigned'} | Role: ${user.role}`;
         
+        // Load simplified admin status (only task chart and subject points)
         await Promise.all([
             loadAdminTaskChart(progress, user.class),
             loadAdminSubjectPointsSummary(progress, user.class)
@@ -1592,6 +1565,7 @@ async function loadAdminSubjectPointsSummary(progress, userClass) {
         
         if (!tasks || tasks.error || tasks.length === 0) return;
         
+        // Group tasks by subject and calculate points
         const subjectStats = {};
         
         tasks.forEach(task => {
@@ -1607,6 +1581,7 @@ async function loadAdminSubjectPointsSummary(progress, userClass) {
             
             subjectStats[subject].totalTasks++;
             
+            // Check if task is completed
             const userTask = Array.isArray(progress) ? progress.find(p => 
                 String(p.item_id) === String(task.task_id) && 
                 p.item_type === "task" && 
@@ -1619,12 +1594,15 @@ async function loadAdminSubjectPointsSummary(progress, userClass) {
             }
         });
         
+        // Calculate total points
         Object.keys(subjectStats).forEach(subject => {
             subjectStats[subject].totalPoints = subjectStats[subject].earnedPoints;
         });
         
+        // Create or find the subject points container in admin status
         let subjectPointsContainer = document.getElementById('adminSubjectPointsGrid');
         if (!subjectPointsContainer) {
+            // Create the subject points section after the task chart
             const taskChartContainer = document.getElementById('adminTaskChart')?.closest('.bg-gray-50');
             if (taskChartContainer) {
                 const subjectPointsSection = document.createElement('div');
@@ -1666,142 +1644,7 @@ async function loadAdminSubjectPointsSummary(progress, userClass) {
 }
 
 // =============================
-// 👨‍💼 Admin Uploads Page
-// =============================
-async function loadAdminUploadsPage() {
-    try {
-        const uploadStudentSelect = document.getElementById('uploadStudentSelect');
-        const noUploadStudentSelected = document.getElementById('noUploadStudentSelected');
-        const uploadStudentFiles = document.getElementById('uploadStudentFiles');
-        
-        uploadStudentSelect.innerHTML = '<option value="">-- Loading Students... --</option>';
-        
-        const users = await api.getSheet("user_credentials");
-        
-        uploadStudentSelect.innerHTML = '<option value="">-- Select Student --</option>';
-        
-        if (users && Array.isArray(users)) {
-            const students = users.filter(user => user.role === 'student');
-            students.forEach(student => {
-                const option = document.createElement('option');
-                option.value = student.username;
-                option.textContent = `${student.full_name || student.username} (Class ${student.class || 'N/A'})`;
-                uploadStudentSelect.appendChild(option);
-            });
-        }
-        
-        const newUploadSelect = uploadStudentSelect.cloneNode(true);
-        uploadStudentSelect.parentNode.replaceChild(newUploadSelect, uploadStudentSelect);
-        
-        document.getElementById('uploadStudentSelect').addEventListener('change', async function() {
-            const selectedUsername = this.value;
-            
-            if (selectedUsername) {
-                noUploadStudentSelected.classList.add('hidden');
-                uploadStudentFiles.classList.remove('hidden');
-                await loadStudentUploads(selectedUsername);
-            } else {
-                noUploadStudentSelected.classList.remove('hidden');
-                uploadStudentFiles.classList.add('hidden');
-            }
-        });
-        
-        noUploadStudentSelected.classList.remove('hidden');
-        uploadStudentFiles.classList.add('hidden');
-        
-    } catch (error) {
-        console.error('Error loading admin uploads page:', error);
-    }
-}
-
-async function loadStudentUploads(username) {
-    try {
-        const [users, pdfUploads, tasks] = await Promise.all([
-            api.getSheet("user_credentials"),
-            api.getSheet(`${username}_pdf_uploads`),
-            api.getSheet(`${currentUser.adminClasses ? currentUser.adminClasses[0] : ''}_tasks_master`)
-        ]);
-        
-        const user = users.find(u => u.username === username);
-        
-        if (!user) {
-            alert('User not found!');
-            return;
-        }
-        
-        document.getElementById('uploadStudentName').textContent = user.full_name || user.username;
-        document.getElementById('uploadStudentInfo').textContent = `Username: ${user.username} | Class: ${user.class || 'Not Assigned'}`;
-        
-        const uploadsContainer = document.getElementById('uploadsContainer');
-        
-        if (!pdfUploads || pdfUploads.error || !Array.isArray(pdfUploads) || pdfUploads.length === 0) {
-            uploadsContainer.innerHTML = `
-                <div class="text-center py-8">
-                    <i class="fas fa-file-pdf text-4xl text-gray-300 mb-3"></i>
-                    <p class="text-gray-500">No PDF uploads found for this student.</p>
-                </div>
-            `;
-            return;
-        }
-        
-        // Create task map for quick lookup
-        const taskMap = {};
-        if (Array.isArray(tasks)) {
-            tasks.forEach(task => {
-                taskMap[task.task_id] = task;
-            });
-        }
-        
-        const uploadsHtml = pdfUploads.map((upload, index) => {
-            const task = taskMap[upload.task_id];
-            const taskTitle = task ? task.title : 'Unknown Task';
-            const taskSubject = upload.subject || (task ? task.subject : 'Unknown Subject');
-            const uploadDate = upload.upload_date ? new Date(upload.upload_date).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            }) : 'Unknown Date';
-            
-            return `
-                <div class="upload-record-card">
-                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                        <div class="flex-1">
-                            <div class="flex items-center gap-2 mb-2">
-                                <span class="task-id-badge">${upload.task_id || 'N/A'}</span>
-                                <span class="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">${taskSubject}</span>
-                            </div>
-                            <h4 class="font-semibold text-gray-800 mb-1">${taskTitle}</h4>
-                            <p class="text-sm text-gray-600">
-                                <i class="fas fa-file-pdf text-red-500 mr-1"></i>
-                                ${upload.file_name || 'unnamed.pdf'}
-                            </p>
-                            <p class="text-xs text-gray-500 mt-1">
-                                <i class="fas fa-clock mr-1"></i>Uploaded: ${uploadDate}
-                            </p>
-                        </div>
-                        <div class="flex-shrink-0">
-                            <button onclick='downloadPDF("${upload.file_data?.replace(/"/g, '\\"') || ''}", "${upload.file_name || 'download.pdf'}")' 
-                                    class="download-btn">
-                                <i class="fas fa-download mr-1"></i>Download PDF
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-        uploadsContainer.innerHTML = uploadsHtml;
-        
-    } catch (error) {
-        console.error('Error loading student uploads:', error);
-        document.getElementById('uploadsContainer').innerHTML = '<p class="text-red-500 text-center py-8">Error loading uploads. Please try again.</p>';
-    }
-}
-
-// =============================
-// ➕ Add Task Functions
+// ➕ Add Task Functions (OPTIMIZED)
 // =============================
 async function openAddTaskModal() {
     const selectedClass = document.getElementById('adminTaskClassSelect').value;
@@ -1817,11 +1660,14 @@ async function openAddTaskModal() {
         const autoSubject = document.getElementById('autoSubject');
         const autoTaskId = document.getElementById('autoTaskId');
         
+        // Set the auto-filled subject
         autoSubject.value = selectedSubject.charAt(0).toUpperCase() + selectedSubject.slice(1);
         
+        // Generate next task ID
         const nextTaskId = await getNextTaskId(selectedClass);
         autoTaskId.value = nextTaskId;
         
+        // Clear form
         document.getElementById('taskTitle').value = '';
         document.getElementById('taskDescription').value = '';
         document.getElementById('taskDueDate').value = '';
@@ -1847,6 +1693,7 @@ async function getNextTaskId(classNum) {
             return 'T1';
         }
         
+        // Extract all task IDs and find the highest number
         const taskIds = tasks
             .map(task => task.task_id)
             .filter(id => id && id.startsWith('T'))
@@ -1885,14 +1732,16 @@ async function submitAddTaskForm(event) {
         const description = document.getElementById('taskDescription').value.trim();
         const dueDate = document.getElementById('taskDueDate').value;
         
+        // Validation
         if (!title || !description || !dueDate) {
             alert('Please fill in all required fields.');
             return;
         }
         
+        // Format due date to DD-MM-YYYY
         const dateObj = new Date(dueDate);
         const formattedDueDate = `${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}-${dateObj.getFullYear()}`;
-        
+        // Prepare row data
         const rowData = [
             selectedSubject,
             taskId,
@@ -1901,6 +1750,7 @@ async function submitAddTaskForm(event) {
             formattedDueDate
         ];
         
+        // Add to Google Sheet
         const tasksSheetName = `${selectedClass}_tasks_master`;
         const result = await api.addRow(tasksSheetName, rowData);
         
@@ -1908,6 +1758,7 @@ async function submitAddTaskForm(event) {
             alert('Task added successfully!');
             closeAddTaskModal();
             
+            // Refresh the tasks list
             await loadAdminClassSubjectData(selectedClass, selectedSubject);
         } else {
             throw new Error(result?.error || 'Failed to add task');
@@ -1923,27 +1774,32 @@ async function submitAddTaskForm(event) {
 }
 
 // =============================
-// 🎯 Event Listeners & Initialization
+// 🎯 Event Listeners & Initialization (OPTIMIZED)
 // =============================
 document.addEventListener('DOMContentLoaded', function() {
+    // Add signup form event listener
     document.getElementById('signupForm').addEventListener('submit', function(e) {
         e.preventDefault();
         submitSignup();
     });
     
+    // Add login form event listener
     document.getElementById('loginForm').addEventListener('submit', function(e) {
         e.preventDefault();
         login();
     });
     
+    // Modal close event listeners
     document.getElementById('studentTaskModal').addEventListener('click', function(e) {
         if (e.target === this) {
             closeStudentTaskModal();
         }
     });
     
+    // Add Task Form event listener
     document.getElementById('addTaskForm').addEventListener('submit', submitAddTaskForm);
     
+    // Add Task Modal close event
     document.getElementById('addTaskModal').addEventListener('click', function(e) {
         if (e.target === this) {
             closeAddTaskModal();
@@ -1951,6 +1807,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// Performance optimization: Debounce resize events
 let resizeTimeout;
 window.addEventListener('resize', function() {
     clearTimeout(resizeTimeout);
@@ -2017,6 +1874,7 @@ function showNotification(message, type = 'info', duration = 5000) {
     
     document.body.appendChild(notification);
     
+    // Auto-remove after duration
     setTimeout(() => {
         if (notification.parentElement) {
             notification.remove();
@@ -2027,6 +1885,8 @@ function showNotification(message, type = 'info', duration = 5000) {
 // =============================
 // 🚀 OPTIMIZATION FUNCTIONS
 // =============================
+
+// Pre-load critical data on app start
 async function preloadCriticalData() {
     if (currentUser) {
         const criticalSheets = ['user_credentials'];
@@ -2034,8 +1894,7 @@ async function preloadCriticalData() {
         if (currentUser.role === 'student' && currentUser.class) {
             criticalSheets.push(
                 `${currentUser.class}_tasks_master`,
-                `${currentUser.username}_progress`,
-                `${currentUser.username}_pdf_uploads`
+                `${currentUser.username}_progress`
             );
         } else if (currentUser.role === 'admin' && currentUser.adminClasses) {
             currentUser.adminClasses.forEach(classNum => {
@@ -2043,10 +1902,12 @@ async function preloadCriticalData() {
             });
         }
         
+        // Pre-load all critical sheets in background
         api.getBatchSheets(criticalSheets);
     }
 }
 
+// Background refresh every 2 minutes
 setInterval(() => {
     if (currentUser) {
         preloadCriticalData();
@@ -2056,20 +1917,26 @@ setInterval(() => {
 // =============================
 // 🔒 Security Functions
 // =============================
+// Disable right-click
 document.addEventListener("contextmenu", function (e) {
     e.preventDefault();
 });
 
+// Disable common inspect shortcuts
 document.addEventListener("keydown", function (e) {
+    // F12
     if (e.key === "F12") {
         e.preventDefault();
     }
+    // Ctrl+Shift+I / Ctrl+Shift+J / Ctrl+Shift+C
     if (e.ctrlKey && e.shiftKey && (e.key === "I" || e.key === "J" || e.key === "C")) {
         e.preventDefault();
     }
+    // Ctrl+U (View source)
     if (e.ctrlKey && (e.key === "u" || e.key === "U")) {
         e.preventDefault();
     }
+    // Ctrl+S (Save page)
     if (e.ctrlKey && (e.key === "s" || e.key === "S")) {
         e.preventDefault();
     }
@@ -2078,6 +1945,7 @@ document.addEventListener("keydown", function (e) {
 // =============================
 // 🚀 Final Initialization
 // =============================
+// Initialize the application when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
@@ -2085,20 +1953,50 @@ if (document.readyState === 'loading') {
 }
 
 function initializeApp() {
-    console.log('Initializing QUAF System...');
+    console.log('Initializing DHDC MANOOR System...');
+    
+    // Set default view to login
     showLogin();
+    
     console.log('System initialized successfully!');
 }
 
-console.log('%c🎓 QUAF System Loaded Successfully! 🎓', 'color: #059669; font-size: 16px; font-weight: bold;');
+// Console welcome message
+console.log('%c🎓 DHDC MANOOR System Loaded Successfully! 🎓', 'color: #059669; font-size: 16px; font-weight: bold;');
+console.log('%cDarul Hidaya Da\'wa College Management System', 'color: #1e40af; font-size: 12px;');
+
+// Debug functions for testing
+function debugAdminData() {
+    console.log('=== ADMIN DATA DEBUG ===');
+    console.log('Current User:', currentUser);
+    console.log('Admin Classes:', currentUser?.adminClasses);
+    console.log('Admin Subjects:', currentUser?.adminSubjects);
+}
+
+function debugCurrentUser() {
+    console.log('=== CURRENT USER DEBUG ===');
+    console.log('currentUser:', currentUser);
+    if (currentUser) {
+        console.log('Role:', currentUser.role);
+        console.log('Class:', currentUser.class);
+        console.log('Subjects:', currentUser.subjects);
+        console.log('AdminClasses:', currentUser.adminClasses);
+        console.log('AdminSubjects:', currentUser.adminSubjects);
+    }
+}
 
 // =============================
 // 🔐 Change Password Functions
 // =============================
 function openChangePasswordModal() {
+    // Close profile menu first
     document.getElementById('profileMenu').classList.add('hidden');
+    
+    // Open change password modal
     const modal = document.getElementById('changePasswordModal');
     modal.classList.remove('hidden');
+    
+    // Reset form and messages
     document.getElementById('changePasswordForm').reset();
     document.getElementById('changePasswordError').classList.add('hidden');
     document.getElementById('changePasswordSuccess').classList.add('hidden');
@@ -2119,9 +2017,11 @@ async function changePassword(event) {
     const successDiv = document.getElementById('changePasswordSuccess');
     const submitBtn = event.target.querySelector('button[type="submit"]');
     
+    // Hide previous messages
     errorDiv.classList.add('hidden');
     successDiv.classList.add('hidden');
     
+    // Validation
     if (!currentPassword || !newPassword || !confirmPassword) {
         showChangePasswordError('Please fill in all fields');
         return;
@@ -2142,36 +2042,44 @@ async function changePassword(event) {
         return;
     }
     
+    // Show loading state
     const originalText = submitBtn.innerHTML;
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Changing Password...';
     submitBtn.disabled = true;
     
     try {
+        // Get all users to verify current password
         const users = await api.getSheet("user_credentials", false);
         
         if (!users || users.error || !Array.isArray(users)) {
             throw new Error('Failed to fetch user data');
         }
         
-        const user = users.find(u => {
-            if (!u.username || !u.password) return false;
-            const storedUsername = String(u.username).toLowerCase().trim();
-            const currentUsername = String(currentUser.username).toLowerCase().trim();
-            const inputPassword = String(currentPassword).trim();
-            const storedPassword = String(u.password).trim();
-            return storedUsername === currentUsername && storedPassword === inputPassword;
-        });
+        // Find current user and verify current password - IMPROVED COMPARISON
+const user = users.find(u => {
+  if (!u.username || !u.password) return false;
+  
+  // Convert both to string and handle case-insensitive comparison
+  const storedUsername = String(u.username).toLowerCase().trim();
+  const currentUsername = String(currentUser.username).toLowerCase().trim();
+  const inputPassword = String(currentPassword).trim();
+  const storedPassword = String(u.password).trim();
+  
+  return storedUsername === currentUsername && storedPassword === inputPassword;
+});
         
         if (!user) {
             throw new Error('Current password is incorrect');
         }
         
+        // Update password using the API
         const updateResult = await api.updatePassword(currentUser.username, newPassword);
         
         if (updateResult && updateResult.success) {
             showChangePasswordSuccess('Password changed successfully! You will be logged out in 3 seconds.');
             document.getElementById('changePasswordForm').reset();
             
+            // Logout after 3 seconds
             setTimeout(() => {
                 closeChangePasswordModal();
                 logout();
@@ -2184,8 +2092,35 @@ async function changePassword(event) {
         console.error('Error changing password:', error);
         showChangePasswordError(error.message);
     } finally {
+        // Restore button state
         submitBtn.innerHTML = originalText;
         submitBtn.disabled = false;
+    }
+}
+
+async function updateUserPassword(username, newPassword) {
+    try {
+        // This function will update the password in Google Sheets
+        // We need to modify our approach since we can't directly update a cell
+        // We'll use the existing addRow approach but with a special identifier
+        
+        const rowData = [
+            username,
+            newPassword,
+            'password_update', // Special identifier
+            new Date().toISOString()
+        ];
+        
+        const result = await api.addRow("password_updates", rowData);
+        
+        // For now, we'll simulate success
+        // In a real implementation, you'd need to modify the Google Apps Script
+        // to handle password updates properly
+        return { success: true, message: 'Password update request submitted' };
+        
+    } catch (error) {
+        console.error('Error updating password:', error);
+        return { error: error.message };
     }
 }
 
@@ -2193,6 +2128,8 @@ function showChangePasswordError(message) {
     const errorDiv = document.getElementById('changePasswordError');
     errorDiv.textContent = message;
     errorDiv.classList.remove('hidden');
+    
+    // Scroll to error message
     errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
@@ -2200,15 +2137,20 @@ function showChangePasswordSuccess(message) {
     const successDiv = document.getElementById('changePasswordSuccess');
     successDiv.textContent = message;
     successDiv.classList.remove('hidden');
+    
+    // Scroll to success message
     successDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+// Add event listener for change password form
 document.addEventListener('DOMContentLoaded', function() {
+    // Add change password form event listener
     const changePasswordForm = document.getElementById('changePasswordForm');
     if (changePasswordForm) {
         changePasswordForm.addEventListener('submit', changePassword);
     }
     
+    // Modal close event listeners
     const changePasswordModal = document.getElementById('changePasswordModal');
     if (changePasswordModal) {
         changePasswordModal.addEventListener('click', function(e) {
@@ -2218,3 +2160,4 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
