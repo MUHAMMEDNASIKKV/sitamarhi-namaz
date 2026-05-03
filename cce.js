@@ -5,7 +5,7 @@ let chartInstances = {};
 let adminChartInstances = {};
 let selectedClassForModal = null;
 let selectedSubjectForModal = null;
-let currentEditTaskInfo = null; // Store current task info for editing
+let currentEditTaskInfo = null;
 
 // Cache for better performance
 let dataCache = {
@@ -17,7 +17,7 @@ let dataCache = {
 };
 
 // =============================
-// 📊 Google Sheets Integration (OPTIMIZED)
+// 📊 Google Sheets Integration
 // =============================
 class GoogleSheetsAPI {
     constructor() {
@@ -153,24 +153,6 @@ class GoogleSheetsAPI {
         }
     }
 
-    async updatePasswordPut(username, newPassword) {
-        try {
-            const response = await fetch(`${this.apiUrl}?action=updatePassword&username=${encodeURIComponent(username)}&newPassword=${encodeURIComponent(newPassword)}`, {
-                method: "PUT"
-            });
-            
-            const result = await response.json();
-            
-            this.cache.delete("user_credentials");
-            delete this.localCache["user_credentials"];
-            this.saveLocalCache();
-            
-            return result;
-        } catch (error) {
-            return { error: error.message };
-        }
-    }
-
     // Upload file method - converts file to base64
     async uploadFile(username, taskId, file) {
         try {
@@ -206,7 +188,6 @@ class GoogleSheetsAPI {
         }
     }
 
-    // Helper method to convert file to base64
     fileToBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -239,7 +220,6 @@ class GoogleSheetsAPI {
             
             const result = await response.json();
             
-            // Clear relevant caches
             this.cache.delete(`${username}_progress`);
             delete this.localCache[`${username}_progress`];
             this.saveLocalCache();
@@ -338,7 +318,7 @@ document.addEventListener('click', function(event) {
 });
 
 // =============================
-// 🔑 Authentication (OPTIMIZED)
+// 🔑 Authentication
 // =============================
 async function login() {
     const username = document.getElementById('username').value.trim();
@@ -587,6 +567,7 @@ async function showPage(page) {
 function openEditPointsModal(username, fullName, taskId, taskTitle, currentPoints, completed, classNum) {
     const modal = document.getElementById('editPointsModal');
     const content = document.getElementById('editPointsContent');
+    const saveBtn = document.querySelector('#editPointsModal .bg-blue-600');
     
     currentEditTaskInfo = {
         username,
@@ -595,10 +576,14 @@ function openEditPointsModal(username, fullName, taskId, taskTitle, currentPoint
         taskTitle,
         currentPoints,
         completed,
-        classNum
+        classNum,
+        multiEdit: false
     };
     
-    // Hide previous messages
+    // Reset save button
+    saveBtn.onclick = submitEditedPoints;
+    saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i>Save Changes';
+    
     document.getElementById('editPointsError').classList.add('hidden');
     document.getElementById('editPointsSuccess').classList.add('hidden');
     
@@ -608,7 +593,7 @@ function openEditPointsModal(username, fullName, taskId, taskTitle, currentPoint
                 <p class="text-sm text-blue-800"><strong>Student:</strong> ${fullName}</p>
                 <p class="text-sm text-blue-800"><strong>Task:</strong> ${taskTitle}</p>
                 <p class="text-sm text-blue-800"><strong>Task ID:</strong> ${taskId}</p>
-                <p class="text-sm text-blue-800"><strong>Current Status:</strong> ${completed ? 'Completed' : 'Not Completed'}</p>
+                <p class="text-sm text-blue-800"><strong>Current Status:</strong> ${completed ? 'Completed (' + currentPoints + '/30)' : 'Not Completed'}</p>
             </div>
             
             <div>
@@ -619,10 +604,10 @@ function openEditPointsModal(username, fullName, taskId, taskTitle, currentPoint
                        id="editPointsInput" 
                        min="0" 
                        max="30" 
-                       value="${currentPoints}" 
+                       value="${completed ? currentPoints : ''}"
                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-300"
-                       placeholder="Enter points (0-30)">
-                <p class="text-xs text-gray-500 mt-1">Points range: 0-30. The task will be marked as completed with these points.</p>
+                       placeholder="${completed ? 'Enter new points' : 'Enter points to complete task'}">
+                <p class="text-xs text-gray-500 mt-1">Points range: 0-30</p>
             </div>
             
             ${completed ? `
@@ -636,7 +621,7 @@ function openEditPointsModal(username, fullName, taskId, taskTitle, currentPoint
                 <div class="bg-green-50 border border-green-200 rounded-lg p-3">
                     <p class="text-sm text-green-800">
                         <i class="fas fa-info-circle mr-1"></i>
-                        This task is not yet completed. Saving will mark it as complete with the entered points.
+                        This task is not yet completed. Saving will mark it as complete.
                     </p>
                 </div>
             `}
@@ -659,13 +644,11 @@ async function submitEditedPoints() {
     const successDiv = document.getElementById('editPointsSuccess');
     const submitBtn = document.querySelector('#editPointsModal .bg-blue-600');
     
-    // Hide previous messages
     errorDiv.classList.add('hidden');
     successDiv.classList.add('hidden');
     
     const points = parseInt(pointsInput.value);
     
-    // Validate points
     if (isNaN(points) || points < 0 || points > 30) {
         showEditPointsError('Please enter valid points between 0 and 30');
         return;
@@ -676,7 +659,6 @@ async function submitEditedPoints() {
         return;
     }
     
-    // Disable button
     const originalText = submitBtn.innerHTML;
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
     submitBtn.disabled = true;
@@ -687,26 +669,27 @@ async function submitEditedPoints() {
         let result;
         
         if (completed) {
-            // Update existing points
             result = await api.updateTaskPoints(username, taskId, points);
         } else {
-            // Mark as complete with points
             result = await api.markTaskComplete(username, taskId, points);
         }
         
         if (result && result.success) {
             showEditPointsSuccess('Points updated successfully!');
             
-            // Refresh the data after a short delay
             setTimeout(async () => {
                 const selectedClass = document.getElementById('adminTaskClassSelect').value;
                 const selectedSubject = document.getElementById('adminTaskSubjectSelect').value;
                 if (selectedClass && selectedSubject) {
                     await loadAdminClassSubjectData(selectedClass, selectedSubject);
                 }
+                
+                // If user is viewing as multi-edit, refresh that too
+                if (currentEditTaskInfo && currentEditTaskInfo.multiEdit) {
+                    await openEditPointsForStudent(username, currentEditTaskInfo.fullName, currentEditTaskInfo.classNum);
+                }
             }, 1000);
             
-            // Close modal after 2 seconds
             setTimeout(() => {
                 closeEditPointsModal();
             }, 2000);
@@ -737,7 +720,7 @@ function showEditPointsSuccess(message) {
 }
 
 // =============================
-// 📤 File Upload Functions (FIXED)
+// 📤 File Upload Functions
 // =============================
 async function triggerFileUpload(taskId, taskTitle) {
     const input = document.createElement('input');
@@ -794,9 +777,8 @@ async function uploadFileToTask(taskId, taskTitle, file) {
                 </span>
             `;
             
-            await checkAndCompleteTask(taskId);
-            
-            showNotification('File uploaded successfully!', 'success');
+            // REMOVED: checkAndCompleteTask - No longer auto-completing tasks on upload
+            showNotification('File uploaded successfully! Points will be assigned by admin.', 'success');
         } else if (result && result.error === 'already_uploaded') {
             alert('You have already uploaded a file for this task. Please contact admin to re-upload.');
             uploadStatusEl.innerHTML = `
@@ -823,32 +805,8 @@ async function uploadFileToTask(taskId, taskTitle, file) {
     }
 }
 
-async function checkAndCompleteTask(taskId) {
-    try {
-        const progress = await api.getSheet(`${currentUser.username}_progress`);
-        const existingTask = Array.isArray(progress) ? progress.find(p => 
-            String(p.item_id) === String(taskId) && 
-            p.item_type === "task" && 
-            p.status === "complete"
-        ) : null;
-        
-        if (!existingTask) {
-            const rowData = [
-                taskId,
-                "task",
-                "complete",
-                new Date().toISOString().split('T')[0],
-                "30"
-            ];
-            await api.addRow(`${currentUser.username}_progress`, rowData);
-        }
-    } catch (error) {
-        console.error('Error auto-completing task:', error);
-    }
-}
-
 // =============================
-// ✅ Tasks (WITH UPLOAD SUPPORT)
+// ✅ Tasks (Student View)
 // =============================
 async function loadTasks() {
     const tasksContainer = document.getElementById('subjectCards');
@@ -1006,7 +964,7 @@ async function loadTasks() {
                                         <i class="fas fa-calendar-alt"></i>
                                         Due: ${task.dueDateFormatted}
                                     </p>
-                                    ${task.completed && task.grade ? `<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Score: ${task.grade}</span>` : ''}
+                                    ${task.completed && task.grade ? `<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Score: ${task.grade}/30</span>` : ''}
                                 </div>
                                 
                                 <div class="upload-section">
@@ -1102,8 +1060,7 @@ function getSubjectIcon(subject) {
 // =============================
 async function loadStatusCharts() {
     try {
-        const progressSheetName = `${currentUser.username}_progress`;
-        const progress = await api.getSheet(progressSheetName);
+        const progress = await api.getSheet(`${currentUser.username}_progress`);
         
         await Promise.all([
             loadTaskChart(progress),
@@ -1118,8 +1075,7 @@ async function loadSubjectPointsSummary(progress) {
     try {
         if (!currentUser.class) return;
         
-        const tasksSheetName = `${currentUser.class}_tasks_master`;
-        const tasks = await api.getSheet(tasksSheetName);
+        const tasks = await api.getSheet(`${currentUser.class}_tasks_master`);
         
         if (!tasks || tasks.error || tasks.length === 0) return;
         
@@ -1186,8 +1142,7 @@ async function loadTaskChart(progress) {
     if (!currentUser.class) return;
     
     try {
-        const tasksSheetName = `${currentUser.class}_tasks_master`;
-        const tasks = await api.getSheet(tasksSheetName);
+        const tasks = await api.getSheet(`${currentUser.class}_tasks_master`);
         const completedTasks = Array.isArray(progress) ? 
             progress.filter(p => p.item_type === "task" && p.status === "complete").length : 0;
         const totalTasks = Array.isArray(tasks) ? tasks.length : 0;
@@ -1226,7 +1181,7 @@ async function loadTaskChart(progress) {
 }
 
 // =============================
-// 👨‍💼 Admin Functions (WITH EDIT POINTS)
+// 👨‍💼 Admin Functions
 // =============================
 async function loadAdminData() {
     try {
@@ -1415,8 +1370,10 @@ async function loadAdminClassSubjectData(classNum, subject) {
         
         document.getElementById('selectedClassSubjectInfo').textContent = `Class ${classNum} - ${subject.charAt(0).toUpperCase() + subject.slice(1)}`;
         
-        const tasksSheetName = `${classNum}_tasks_master`;
-        const tasks = await api.getSheet(tasksSheetName);
+        const [tasks, users] = await Promise.all([
+            api.getSheet(`${classNum}_tasks_master`),
+            api.getSheet("user_credentials")
+        ]);
         
         const adminClassSubjectTasksList = document.getElementById('adminClassSubjectTasksList');
         
@@ -1494,6 +1451,7 @@ async function loadAdminClassSubjectData(classNum, subject) {
             }
         }
         
+        // Load students
         await loadAdminClassStudents(classNum);
         
     } catch (error) {
@@ -1534,18 +1492,44 @@ async function loadAdminClassStudents(classNum) {
             return;
         }
         
+        // Load progress for all students in parallel
+        const progressPromises = classStudents.map(async (student) => {
+            const progress = await api.getSheet(`${student.username}_progress`);
+            return {
+                username: student.username,
+                progress: progress && Array.isArray(progress) ? progress : []
+            };
+        });
+        
+        const allProgress = await Promise.all(progressPromises);
+        const progressMap = {};
+        allProgress.forEach(p => {
+            progressMap[p.username] = p.progress;
+        });
+        
         const studentsHtml = classStudents.map(student => {
             const initials = student.full_name ? 
                 student.full_name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) : 
                 student.username.substring(0, 2).toUpperCase();
             
+            // Calculate completed tasks and points for this class-subject
+            const studentProgress = progressMap[student.username] || [];
+            const completedTasks = studentProgress.filter(p => 
+                p.item_type === "task" && p.status === "complete"
+            );
+            
+            const totalPoints = completedTasks.reduce((sum, p) => sum + (parseInt(p.grade) || 0), 0);
+            
             return `
-                <div class="student-card" onclick="openStudentTaskModal('${student.username}', '${student.full_name || student.username}', '${classNum}')">
+                <div class="student-card">
                     <div class="student-avatar">${initials}</div>
                     <div class="student-name">${student.full_name || student.username}</div>
                     <div class="student-username">@${student.username}</div>
                     <div class="student-class">Class ${student.class}</div>
-                    <div class="mt-2">
+                    <div class="text-xs text-gray-600 mt-2">
+                        ${completedTasks.length} tasks • ${totalPoints} points
+                    </div>
+                    <div class="mt-3">
                         <button onclick="event.stopPropagation(); openEditPointsForStudent('${student.username}', '${student.full_name || student.username}', '${classNum}')" 
                                 class="edit-points-btn">
                             <i class="fas fa-edit mr-1"></i>Edit Points
@@ -1564,18 +1548,30 @@ async function loadAdminClassStudents(classNum) {
     }
 }
 
-// Open edit points modal for a specific student showing all their tasks
+// Open edit points modal for a student showing all their tasks
 async function openEditPointsForStudent(username, fullName, classNum) {
     try {
         const modal = document.getElementById('editPointsModal');
         const content = document.getElementById('editPointsContent');
+        const saveBtn = document.querySelector('#editPointsModal .bg-blue-600');
         
         currentEditTaskInfo = {
             username,
             fullName,
             classNum,
-            multiEdit: true // Flag for multi-task edit mode
+            multiEdit: true
         };
+        
+        // Change save button to "Done" for multi-edit mode
+        saveBtn.onclick = function() {
+            closeEditPointsModal();
+            const selectedClass = document.getElementById('adminTaskClassSelect').value;
+            const selectedSubject = document.getElementById('adminTaskSubjectSelect').value;
+            if (selectedClass && selectedSubject) {
+                loadAdminClassSubjectData(selectedClass, selectedSubject);
+            }
+        };
+        saveBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Done';
         
         document.getElementById('editPointsError').classList.add('hidden');
         document.getElementById('editPointsSuccess').classList.add('hidden');
@@ -1594,7 +1590,6 @@ async function openEditPointsForStudent(username, fullName, classNum) {
         
         modal.classList.remove('hidden');
         
-        // Load tasks and progress
         const [tasks, progress] = await Promise.all([
             api.getSheet(`${classNum}_tasks_master`),
             api.getSheet(`${username}_progress`)
@@ -1625,50 +1620,63 @@ async function openEditPointsForStudent(username, fullName, classNum) {
         }
         
         // Build task list with edit inputs
-        const tasksHtml = tasks.map(task => {
-            const userProgress = progressMap.get(String(task.task_id));
-            const completed = !!userProgress;
-            const currentPoints = userProgress?.grade || 0;
+        const tasksBySubject = {};
+        tasks.forEach(task => {
+            const subject = task.subject || 'General';
+            if (!tasksBySubject[subject]) {
+                tasksBySubject[subject] = [];
+            }
+            tasksBySubject[subject].push(task);
+        });
+        
+        let tasksHtml = '';
+        
+        Object.entries(tasksBySubject).forEach(([subject, subjectTasks]) => {
+            tasksHtml += `
+                <div class="mb-4">
+                    <h4 class="text-sm font-bold text-blue-700 mb-2 bg-blue-50 p-2 rounded">${subject}</h4>
+            `;
             
-            return `
-                <div class="admin-task-item ${completed ? 'completed' : ''}">
-                    <div class="flex items-start justify-between">
-                        <div class="flex-1">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="task-id-badge">${task.task_id}</span>
-                                <span class="text-xs ${completed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'} px-2 py-1 rounded">
-                                    ${completed ? `Completed (${currentPoints}/30)` : 'Not Completed'}
-                                </span>
-                            </div>
-                            <h4 class="task-title">${task.title}</h4>
-                            <p class="text-xs text-gray-500">${task.subject || 'General'}</p>
-                            
-                            <div class="mt-3 flex items-center gap-3">
-                                <label class="text-xs font-medium text-gray-700">Points (0-30):</label>
-                                <input type="number" 
-                                       class="grade-input edit-task-points-input"
-                                       data-task-id="${task.task_id}"
-                                       min="0" 
-                                       max="30" 
-                                       value="${completed ? currentPoints : ''}"
-                                       placeholder="${completed ? '' : 'Enter points to complete'}">
-                                ${completed ? `
-                                    <button onclick="updateSingleTaskPoint('${task.task_id}', this)" 
-                                            class="edit-points-btn">
-                                        <i class="fas fa-save mr-1"></i>Update
+            subjectTasks.forEach(task => {
+                const userProgress = progressMap.get(String(task.task_id));
+                const completed = !!userProgress;
+                const currentPoints = userProgress?.grade || 0;
+                
+                tasksHtml += `
+                    <div class="admin-task-item ${completed ? 'completed' : ''} mb-2">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="task-id-badge">${task.task_id}</span>
+                                    <span class="text-xs ${completed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'} px-2 py-1 rounded">
+                                        ${completed ? `Completed (${currentPoints}/30)` : 'Not Completed'}
+                                    </span>
+                                </div>
+                                <h4 class="task-title text-sm">${task.title}</h4>
+                                
+                                <div class="mt-3 flex items-center gap-3">
+                                    <label class="text-xs font-medium text-gray-700">Points (0-30):</label>
+                                    <input type="number" 
+                                           class="grade-input edit-task-points-input"
+                                           data-task-id="${task.task_id}"
+                                           min="0" 
+                                           max="30" 
+                                           value="${completed ? currentPoints : ''}"
+                                           style="width: 80px;"
+                                           placeholder="Points">
+                                    <button onclick="updateOrCompleteTask('${task.task_id}', ${completed}, this)" 
+                                            class="edit-points-btn text-xs">
+                                        <i class="fas fa-save mr-1"></i>${completed ? 'Update' : 'Complete'}
                                     </button>
-                                ` : `
-                                    <button onclick="completeSingleTask('${task.task_id}', this)" 
-                                            class="bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded text-xs font-semibold transition duration-200">
-                                        <i class="fas fa-check mr-1"></i>Complete
-                                    </button>
-                                `}
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            `;
-        }).join('');
+                `;
+            });
+            
+            tasksHtml += `</div>`;
+        });
         
         content.innerHTML = `
             <div class="space-y-3 max-h-96 overflow-y-auto">
@@ -1681,29 +1689,18 @@ async function openEditPointsForStudent(username, fullName, classNum) {
             </div>
         `;
         
-        // Change the save button behavior for multi-edit mode
-        const saveBtn = document.querySelector('#editPointsModal .bg-blue-600');
-        saveBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Done';
-        saveBtn.onclick = function() {
-            closeEditPointsModal();
-            // Refresh the current view
-            const selectedClass = document.getElementById('adminTaskClassSelect').value;
-            const selectedSubject = document.getElementById('adminTaskSubjectSelect').value;
-            if (selectedClass && selectedSubject) {
-                loadAdminClassSubjectData(selectedClass, selectedSubject);
-            }
-        };
-        
     } catch (error) {
         console.error('Error opening edit points for student:', error);
-        const content = document.getElementById('editPointsContent');
-        content.innerHTML = '<p class="text-red-500 text-center py-4">Error loading tasks. Please try again.</p>';
+        document.getElementById('editPointsContent').innerHTML = '<p class="text-red-500 text-center py-4">Error loading tasks. Please try again.</p>';
     }
 }
 
-// Update single task point from the multi-edit modal
-async function updateSingleTaskPoint(taskId, button) {
-    const pointsInput = document.querySelector(`input[data-task-id="${taskId}"]`);
+// Combined function to update or complete a task from the multi-edit modal
+async function updateOrCompleteTask(taskId, completed, button) {
+    const container = button.closest('.admin-task-item') || button.closest('.flex.items-start');
+    const pointsInput = container.querySelector(`input[data-task-id="${taskId}"]`) || 
+                       document.querySelector(`input[data-task-id="${taskId}"]`);
+    
     const points = parseInt(pointsInput.value);
     
     if (isNaN(points) || points < 0 || points > 30) {
@@ -1716,80 +1713,32 @@ async function updateSingleTaskPoint(taskId, button) {
     button.disabled = true;
     
     try {
-        const result = await api.updateTaskPoints(currentEditTaskInfo.username, taskId, points);
+        let result;
+        
+        if (completed) {
+            result = await api.updateTaskPoints(currentEditTaskInfo.username, taskId, points);
+        } else {
+            result = await api.markTaskComplete(currentEditTaskInfo.username, taskId, points);
+        }
         
         if (result && result.success) {
-            showNotification('Points updated successfully!', 'success');
+            showNotification(`Task points ${completed ? 'updated' : 'assigned'} successfully!`, 'success');
             
-            // Update the UI for this task
-            const taskItem = button.closest('.admin-task-item');
-            const statusBadge = taskItem.querySelector('.text-xs.rounded');
-            statusBadge.className = 'text-xs bg-green-100 text-green-800 px-2 py-1 rounded';
-            statusBadge.textContent = `Completed (${points}/30)`;
-            
-            // Change button to "Update" style
-            const buttonContainer = button.parentElement;
-            buttonContainer.innerHTML = `
-                <button onclick="updateSingleTaskPoint('${taskId}', this)" 
-                        class="edit-points-btn">
-                    <i class="fas fa-save mr-1"></i>Update
-                </button>
-            `;
+            // Refresh the multi-edit view
+            await openEditPointsForStudent(
+                currentEditTaskInfo.username, 
+                currentEditTaskInfo.fullName, 
+                currentEditTaskInfo.classNum
+            );
         } else {
             throw new Error(result?.error || 'Failed to update points');
         }
     } catch (error) {
-        console.error('Error updating task point:', error);
+        console.error('Error updating task:', error);
         alert('Error: ' + error.message);
     } finally {
         button.innerHTML = originalText;
-    }
-}
-
-// Complete a single task from the multi-edit modal
-async function completeSingleTask(taskId, button) {
-    const pointsInput = document.querySelector(`input[data-task-id="${taskId}"]`);
-    const points = parseInt(pointsInput.value);
-    
-    if (isNaN(points) || points < 0 || points > 30) {
-        alert('Please enter valid points between 0 and 30');
-        return;
-    }
-    
-    const originalText = button.innerHTML;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    button.disabled = true;
-    
-    try {
-        const result = await api.markTaskComplete(currentEditTaskInfo.username, taskId, points);
-        
-        if (result && result.success) {
-            showNotification('Task completed successfully!', 'success');
-            
-            // Update the UI for this task
-            const taskItem = button.closest('.admin-task-item');
-            taskItem.classList.add('completed');
-            
-            const statusBadge = taskItem.querySelector('.text-xs.rounded');
-            statusBadge.className = 'text-xs bg-green-100 text-green-800 px-2 py-1 rounded';
-            statusBadge.textContent = `Completed (${points}/30)`;
-            
-            // Change button to "Update" style
-            const buttonContainer = button.parentElement;
-            buttonContainer.innerHTML = `
-                <button onclick="updateSingleTaskPoint('${taskId}', this)" 
-                        class="edit-points-btn">
-                    <i class="fas fa-save mr-1"></i>Update
-                </button>
-            `;
-        } else {
-            throw new Error(result?.error || 'Failed to complete task');
-        }
-    } catch (error) {
-        console.error('Error completing task:', error);
-        alert('Error: ' + error.message);
-    } finally {
-        button.innerHTML = originalText;
+        button.disabled = false;
     }
 }
 
@@ -1895,11 +1844,6 @@ async function openStudentTaskModal(username, fullName, classNum) {
                                 <div class="flex items-center space-x-2">
                                     ${statusIcon}
                                     <span class="text-xs font-medium">${statusText}</span>
-                                    <button onclick="openEditPointsModal('${username}', '${fullName}', '${task.task_id}', '${escapeHtml(task.title)}', ${currentGrade}, ${completed}, '${classNum}')" 
-                                            class="edit-points-btn" 
-                                            title="Edit Points">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
                                 </div>
                             </div>
                             <h4 class="task-title">${task.title}</h4>
@@ -1938,8 +1882,7 @@ async function openStudentTaskModal(username, fullName, classNum) {
         
     } catch (error) {
         console.error('Error opening student task modal:', error);
-        const content = document.getElementById('studentTaskModalContent');
-        content.innerHTML = '<p class="text-red-500 text-center py-8">Error loading student tasks. Please try again.</p>';
+        document.getElementById('studentTaskModalContent').innerHTML = '<p class="text-red-500 text-center py-8">Error loading student tasks. Please try again.</p>';
     }
 }
 
@@ -2076,7 +2019,6 @@ async function loadAllUsersStatus() {
         
     } catch (error) {
         console.error('Error loading all users status:', error);
-        const userSelect = document.getElementById('userSelect');
         userSelect.innerHTML = '<option value="">-- Error Loading Users --</option>';
     }
 }
@@ -2113,8 +2055,7 @@ async function loadAdminTaskChart(progress, userClass) {
     if (!userClass) return;
     
     try {
-        const tasksSheetName = `${userClass}_tasks_master`;
-        const tasks = await api.getSheet(tasksSheetName);
+        const tasks = await api.getSheet(`${userClass}_tasks_master`);
         const completedTasks = Array.isArray(progress) ? 
             progress.filter(p => p.item_type === "task" && p.status === "complete").length : 0;
         const totalTasks = Array.isArray(tasks) ? tasks.length : 0;
@@ -2156,8 +2097,7 @@ async function loadAdminSubjectPointsSummary(progress, userClass) {
     try {
         if (!userClass) return;
         
-        const tasksSheetName = `${userClass}_tasks_master`;
-        const tasks = await api.getSheet(tasksSheetName);
+        const tasks = await api.getSheet(`${userClass}_tasks_master`);
         
         if (!tasks || tasks.error || tasks.length === 0) return;
         
@@ -2280,7 +2220,6 @@ async function loadAdminUploadsPage() {
         
     } catch (error) {
         console.error('Error loading admin uploads page:', error);
-        const uploadUserSelect = document.getElementById('uploadUserSelect');
         uploadUserSelect.innerHTML = '<option value="">-- Error Loading Users --</option>';
     }
 }
@@ -2367,7 +2306,6 @@ async function loadUserUploads(username) {
         
     } catch (error) {
         console.error('Error loading user uploads:', error);
-        const uploadTasksList = document.getElementById('uploadTasksList');
         uploadTasksList.innerHTML = '<p class="text-red-500 text-center py-8">Error loading uploads. Please try again.</p>';
     }
 }
@@ -2386,13 +2324,8 @@ async function openAddTaskModal() {
     
     try {
         const modal = document.getElementById('addTaskModal');
-        const autoSubject = document.getElementById('autoSubject');
-        const autoTaskId = document.getElementById('autoTaskId');
-        
-        autoSubject.value = selectedSubject.charAt(0).toUpperCase() + selectedSubject.slice(1);
-        
-        const nextTaskId = await getNextTaskId(selectedClass);
-        autoTaskId.value = nextTaskId;
+        document.getElementById('autoSubject').value = selectedSubject.charAt(0).toUpperCase() + selectedSubject.slice(1);
+        document.getElementById('autoTaskId').value = await getNextTaskId(selectedClass);
         
         document.getElementById('taskTitle').value = '';
         document.getElementById('taskDescription').value = '';
@@ -2412,8 +2345,7 @@ function closeAddTaskModal() {
 
 async function getNextTaskId(classNum) {
     try {
-        const tasksSheetName = `${classNum}_tasks_master`;
-        const tasks = await api.getSheet(tasksSheetName);
+        const tasks = await api.getSheet(`${classNum}_tasks_master`);
         
         if (!tasks || tasks.error || tasks.length === 0) {
             return 'T1';
@@ -2427,12 +2359,9 @@ async function getNextTaskId(classNum) {
                 return isNaN(num) ? 0 : num;
             });
         
-        if (taskIds.length === 0) {
-            return 'T1';
-        }
+        if (taskIds.length === 0) return 'T1';
         
-        const maxId = Math.max(...taskIds);
-        return `T${maxId + 1}`;
+        return `T${Math.max(...taskIds) + 1}`;
         
     } catch (error) {
         console.error('Error generating next task ID:', error);
@@ -2465,21 +2394,13 @@ async function submitAddTaskForm(event) {
         const dateObj = new Date(dueDate);
         const formattedDueDate = `${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}-${dateObj.getFullYear()}`;
         
-        const rowData = [
-            selectedSubject,
-            taskId,
-            title,
-            description,
-            formattedDueDate
-        ];
+        const rowData = [selectedSubject, taskId, title, description, formattedDueDate];
         
-        const tasksSheetName = `${selectedClass}_tasks_master`;
-        const result = await api.addRow(tasksSheetName, rowData);
+        const result = await api.addRow(`${selectedClass}_tasks_master`, rowData);
         
         if (result && (result.success || result.message?.includes('Success'))) {
             alert('Task added successfully!');
             closeAddTaskModal();
-            
             await loadAdminClassSubjectData(selectedClass, selectedSubject);
         } else {
             throw new Error(result?.error || 'Failed to add task');
@@ -2509,23 +2430,17 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     document.getElementById('studentTaskModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeStudentTaskModal();
-        }
+        if (e.target === this) closeStudentTaskModal();
     });
     
     document.getElementById('addTaskForm').addEventListener('submit', submitAddTaskForm);
     
     document.getElementById('addTaskModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeAddTaskModal();
-        }
+        if (e.target === this) closeAddTaskModal();
     });
     
     document.getElementById('editPointsModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeEditPointsModal();
-        }
+        if (e.target === this) closeEditPointsModal();
     });
     
     const changePasswordForm = document.getElementById('changePasswordForm');
@@ -2536,9 +2451,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const changePasswordModal = document.getElementById('changePasswordModal');
     if (changePasswordModal) {
         changePasswordModal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeChangePasswordModal();
-            }
+            if (e.target === this) closeChangePasswordModal();
         });
     }
 });
@@ -2565,8 +2478,7 @@ window.addEventListener('resize', function() {
 // =============================
 function formatDate(dateString) {
     try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
+        return new Date(dateString).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'
@@ -2578,23 +2490,14 @@ function formatDate(dateString) {
 
 function showNotification(message, type = 'info', duration = 5000) {
     const notification = document.createElement('div');
-    let bgColor = 'bg-blue-500';
-    let icon = 'fas fa-info-circle';
+    const colors = {
+        success: { bg: 'bg-green-500', icon: 'fas fa-check-circle' },
+        error: { bg: 'bg-red-500', icon: 'fas fa-exclamation-circle' },
+        warning: { bg: 'bg-yellow-500', icon: 'fas fa-exclamation-triangle' },
+        info: { bg: 'bg-blue-500', icon: 'fas fa-info-circle' }
+    };
     
-    switch (type) {
-        case 'success':
-            bgColor = 'bg-green-500';
-            icon = 'fas fa-check-circle';
-            break;
-        case 'error':
-            bgColor = 'bg-red-500';
-            icon = 'fas fa-exclamation-circle';
-            break;
-        case 'warning':
-            bgColor = 'bg-yellow-500';
-            icon = 'fas fa-exclamation-triangle';
-            break;
-    }
+    const { bg: bgColor, icon } = colors[type] || colors.info;
     
     notification.className = `fixed top-20 right-4 ${bgColor} text-white p-4 rounded-lg shadow-lg z-50 max-w-sm`;
     notification.innerHTML = `
@@ -2610,9 +2513,7 @@ function showNotification(message, type = 'info', duration = 5000) {
     document.body.appendChild(notification);
     
     setTimeout(() => {
-        if (notification.parentElement) {
-            notification.remove();
-        }
+        if (notification.parentElement) notification.remove();
     }, duration);
 }
 
@@ -2621,10 +2522,7 @@ async function preloadCriticalData() {
         const criticalSheets = ['user_credentials'];
         
         if (currentUser.role === 'student' && currentUser.class) {
-            criticalSheets.push(
-                `${currentUser.class}_tasks_master`,
-                `${currentUser.username}_progress`
-            );
+            criticalSheets.push(`${currentUser.class}_tasks_master`, `${currentUser.username}_progress`);
         } else if (currentUser.role === 'admin' && currentUser.adminClasses) {
             currentUser.adminClasses.forEach(classNum => {
                 criticalSheets.push(`${classNum}_tasks_master`);
@@ -2636,28 +2534,16 @@ async function preloadCriticalData() {
 }
 
 setInterval(() => {
-    if (currentUser) {
-        preloadCriticalData();
-    }
+    if (currentUser) preloadCriticalData();
 }, 2 * 60 * 1000);
 
-document.addEventListener("contextmenu", function (e) {
-    e.preventDefault();
-});
+document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 
 document.addEventListener("keydown", function (e) {
-    if (e.key === "F12") {
-        e.preventDefault();
-    }
-    if (e.ctrlKey && e.shiftKey && (e.key === "I" || e.key === "J" || e.key === "C")) {
-        e.preventDefault();
-    }
-    if (e.ctrlKey && (e.key === "u" || e.key === "U")) {
-        e.preventDefault();
-    }
-    if (e.ctrlKey && (e.key === "s" || e.key === "S")) {
-        e.preventDefault();
-    }
+    if (e.key === "F12") e.preventDefault();
+    if (e.ctrlKey && e.shiftKey && (e.key === "I" || e.key === "J" || e.key === "C")) e.preventDefault();
+    if (e.ctrlKey && (e.key === "u" || e.key === "U")) e.preventDefault();
+    if (e.ctrlKey && (e.key === "s" || e.key === "S")) e.preventDefault();
 });
 
 if (document.readyState === 'loading') {
@@ -2698,10 +2584,7 @@ function debugCurrentUser() {
 // =============================
 function openChangePasswordModal() {
     document.getElementById('profileMenu').classList.add('hidden');
-    
-    const modal = document.getElementById('changePasswordModal');
-    modal.classList.remove('hidden');
-    
+    document.getElementById('changePasswordModal').classList.remove('hidden');
     document.getElementById('changePasswordForm').reset();
     document.getElementById('changePasswordError').classList.add('hidden');
     document.getElementById('changePasswordSuccess').classList.add('hidden');
@@ -2758,13 +2641,8 @@ async function changePassword(event) {
         
         const user = users.find(u => {
             if (!u.username || !u.password) return false;
-            
-            const storedUsername = String(u.username).toLowerCase().trim();
-            const currentUsername = String(currentUser.username).toLowerCase().trim();
-            const inputPassword = String(currentPassword).trim();
-            const storedPassword = String(u.password).trim();
-            
-            return storedUsername === currentUsername && storedPassword === inputPassword;
+            return String(u.username).toLowerCase().trim() === String(currentUser.username).toLowerCase().trim() && 
+                   String(u.password).trim() === String(currentPassword).trim();
         });
         
         if (!user) {
@@ -2776,7 +2654,6 @@ async function changePassword(event) {
         if (updateResult && updateResult.success) {
             showChangePasswordSuccess('Password changed successfully! You will be logged out in 3 seconds.');
             document.getElementById('changePasswordForm').reset();
-            
             setTimeout(() => {
                 closeChangePasswordModal();
                 logout();
