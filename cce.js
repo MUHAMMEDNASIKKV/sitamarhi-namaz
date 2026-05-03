@@ -5,6 +5,7 @@ let chartInstances = {};
 let adminChartInstances = {};
 let selectedClassForModal = null;
 let selectedSubjectForModal = null;
+let currentEditTaskInfo = null; // Store current task info for editing
 
 // Cache for better performance
 let dataCache = {
@@ -20,7 +21,7 @@ let dataCache = {
 // =============================
 class GoogleSheetsAPI {
     constructor() {
-        this.apiUrl = "https://script.google.com/macros/s/AKfycbzWfGU1TX2oe-nNQpPEyHJFr3oOHowuAgtFq9pyNOMkBSHJdUl8FBt53Qd-YTM2f1x1/exec";
+        this.apiUrl = "https://script.google.com/macros/s/AKfycbxU3ag0HT1ylsikdyO758qov6CLggFO-z4ZwH4P4pj3hU01dZ_RO5GHRbyhi58-FrCi/exec";
         this.cache = new Map();
         this.localCache = this.initLocalCache();
         this.cacheTimeout = 30 * 1000;
@@ -170,10 +171,9 @@ class GoogleSheetsAPI {
         }
     }
 
-    // Updated uploadFile method - converts file to base64
+    // Upload file method - converts file to base64
     async uploadFile(username, taskId, file) {
         try {
-            // Convert file to base64
             const base64Data = await this.fileToBase64(file);
             
             const payload = {
@@ -212,12 +212,59 @@ class GoogleSheetsAPI {
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = () => {
-                // Remove the data URL prefix (e.g., "data:application/pdf;base64,")
                 const base64 = reader.result.split(',')[1];
                 resolve(base64);
             };
             reader.onerror = (error) => reject(error);
         });
+    }
+
+    // Update task points for a student
+    async updateTaskPoints(username, taskId, newPoints) {
+        try {
+            const payload = {
+                action: 'updateTaskPoints',
+                username: username,
+                taskId: taskId,
+                points: newPoints
+            };
+            
+            const response = await fetch(this.apiUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                    data: JSON.stringify(payload)
+                })
+            });
+            
+            const result = await response.json();
+            
+            // Clear relevant caches
+            this.cache.delete(`${username}_progress`);
+            delete this.localCache[`${username}_progress`];
+            this.saveLocalCache();
+            
+            return result;
+        } catch (error) {
+            return { error: error.message };
+        }
+    }
+
+    // Mark task as complete with specific points
+    async markTaskComplete(username, taskId, points) {
+        try {
+            const rowData = [
+                taskId,
+                "task",
+                "complete",
+                new Date().toISOString().split('T')[0],
+                points.toString()
+            ];
+            
+            return await this.addRow(`${username}_progress`, rowData);
+        } catch (error) {
+            return { error: error.message };
+        }
     }
 
     // Get uploads for a specific user
@@ -379,6 +426,7 @@ function logout() {
     currentUser = null;
     selectedClassForModal = null;
     selectedSubjectForModal = null;
+    currentEditTaskInfo = null;
     api.clearCache();
     
     Object.values(chartInstances).forEach(chart => {
@@ -534,6 +582,161 @@ async function showPage(page) {
 }
 
 // =============================
+// ✏️ Edit Points Modal Functions
+// =============================
+function openEditPointsModal(username, fullName, taskId, taskTitle, currentPoints, completed, classNum) {
+    const modal = document.getElementById('editPointsModal');
+    const content = document.getElementById('editPointsContent');
+    
+    currentEditTaskInfo = {
+        username,
+        fullName,
+        taskId,
+        taskTitle,
+        currentPoints,
+        completed,
+        classNum
+    };
+    
+    // Hide previous messages
+    document.getElementById('editPointsError').classList.add('hidden');
+    document.getElementById('editPointsSuccess').classList.add('hidden');
+    
+    content.innerHTML = `
+        <div class="space-y-4">
+            <div class="bg-blue-50 rounded-lg p-3">
+                <p class="text-sm text-blue-800"><strong>Student:</strong> ${fullName}</p>
+                <p class="text-sm text-blue-800"><strong>Task:</strong> ${taskTitle}</p>
+                <p class="text-sm text-blue-800"><strong>Task ID:</strong> ${taskId}</p>
+                <p class="text-sm text-blue-800"><strong>Current Status:</strong> ${completed ? 'Completed' : 'Not Completed'}</p>
+            </div>
+            
+            <div>
+                <label for="editPointsInput" class="block text-sm font-medium text-gray-700 mb-2">
+                    Points (0-30) *
+                </label>
+                <input type="number" 
+                       id="editPointsInput" 
+                       min="0" 
+                       max="30" 
+                       value="${currentPoints}" 
+                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-300"
+                       placeholder="Enter points (0-30)">
+                <p class="text-xs text-gray-500 mt-1">Points range: 0-30. The task will be marked as completed with these points.</p>
+            </div>
+            
+            ${completed ? `
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p class="text-sm text-yellow-800">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        This task is already completed. Updating will modify the existing points.
+                    </p>
+                </div>
+            ` : `
+                <div class="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <p class="text-sm text-green-800">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        This task is not yet completed. Saving will mark it as complete with the entered points.
+                    </p>
+                </div>
+            `}
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+}
+
+function closeEditPointsModal() {
+    document.getElementById('editPointsModal').classList.add('hidden');
+    currentEditTaskInfo = null;
+    document.getElementById('editPointsError').classList.add('hidden');
+    document.getElementById('editPointsSuccess').classList.add('hidden');
+}
+
+async function submitEditedPoints() {
+    const pointsInput = document.getElementById('editPointsInput');
+    const errorDiv = document.getElementById('editPointsError');
+    const successDiv = document.getElementById('editPointsSuccess');
+    const submitBtn = document.querySelector('#editPointsModal .bg-blue-600');
+    
+    // Hide previous messages
+    errorDiv.classList.add('hidden');
+    successDiv.classList.add('hidden');
+    
+    const points = parseInt(pointsInput.value);
+    
+    // Validate points
+    if (isNaN(points) || points < 0 || points > 30) {
+        showEditPointsError('Please enter valid points between 0 and 30');
+        return;
+    }
+    
+    if (!currentEditTaskInfo) {
+        showEditPointsError('No task selected for editing');
+        return;
+    }
+    
+    // Disable button
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
+    submitBtn.disabled = true;
+    
+    try {
+        const { username, taskId, completed } = currentEditTaskInfo;
+        
+        let result;
+        
+        if (completed) {
+            // Update existing points
+            result = await api.updateTaskPoints(username, taskId, points);
+        } else {
+            // Mark as complete with points
+            result = await api.markTaskComplete(username, taskId, points);
+        }
+        
+        if (result && result.success) {
+            showEditPointsSuccess('Points updated successfully!');
+            
+            // Refresh the data after a short delay
+            setTimeout(async () => {
+                const selectedClass = document.getElementById('adminTaskClassSelect').value;
+                const selectedSubject = document.getElementById('adminTaskSubjectSelect').value;
+                if (selectedClass && selectedSubject) {
+                    await loadAdminClassSubjectData(selectedClass, selectedSubject);
+                }
+            }, 1000);
+            
+            // Close modal after 2 seconds
+            setTimeout(() => {
+                closeEditPointsModal();
+            }, 2000);
+        } else {
+            throw new Error(result?.error || 'Failed to update points');
+        }
+    } catch (error) {
+        console.error('Error updating points:', error);
+        showEditPointsError('Error: ' + error.message);
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+}
+
+function showEditPointsError(message) {
+    const errorDiv = document.getElementById('editPointsError');
+    errorDiv.textContent = message;
+    errorDiv.classList.remove('hidden');
+    errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function showEditPointsSuccess(message) {
+    const successDiv = document.getElementById('editPointsSuccess');
+    successDiv.textContent = message;
+    successDiv.classList.remove('hidden');
+    successDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// =============================
 // 📤 File Upload Functions (FIXED)
 // =============================
 async function triggerFileUpload(taskId, taskTitle) {
@@ -546,13 +749,11 @@ async function triggerFileUpload(taskId, taskTitle) {
         const file = e.target.files[0];
         if (!file) return;
         
-        // Validate file type
         if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
             alert('Please select a PDF file only.');
             return;
         }
         
-        // Validate file size (10MB max)
         if (file.size > 10 * 1024 * 1024) {
             alert('File size must be less than 10MB.');
             return;
@@ -570,7 +771,6 @@ async function uploadFileToTask(taskId, taskTitle, file) {
     
     if (!uploadStatusEl || !uploadBtnEl) return;
     
-    // Show uploading state
     uploadBtnEl.disabled = true;
     uploadBtnEl.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Uploading...';
     uploadStatusEl.innerHTML = `
@@ -582,10 +782,9 @@ async function uploadFileToTask(taskId, taskTitle, file) {
     try {
         const result = await api.uploadFile(currentUser.username, taskId, file);
         
-        console.log('Upload result:', result); // Debug log
+        console.log('Upload result:', result);
         
         if (result && result.success) {
-            // Show success
             uploadBtnEl.classList.add('uploaded');
             uploadBtnEl.innerHTML = '<i class="fas fa-check mr-1"></i>Uploaded';
             uploadBtnEl.disabled = true;
@@ -595,7 +794,6 @@ async function uploadFileToTask(taskId, taskTitle, file) {
                 </span>
             `;
             
-            // Also log this as task completion if not already completed
             await checkAndCompleteTask(taskId);
             
             showNotification('File uploaded successfully!', 'success');
@@ -635,7 +833,6 @@ async function checkAndCompleteTask(taskId) {
         ) : null;
         
         if (!existingTask) {
-            // Auto-complete task with default grade
             const rowData = [
                 taskId,
                 "task",
@@ -682,7 +879,6 @@ async function loadTasks() {
             
             document.getElementById('userClass').textContent = `Class ${currentUser.class}`;
             
-            // Load tasks, progress, and uploads in parallel
             const [tasks, progress, uploads] = await Promise.all([
                 api.getSheet(`${currentUser.class}_tasks_master`),
                 api.getSheet(`${currentUser.username}_progress`),
@@ -706,7 +902,6 @@ async function loadTasks() {
                 });
             }
 
-            // Create uploads map
             const uploadsMap = new Map();
             if (Array.isArray(uploads)) {
                 uploads.forEach(u => {
@@ -752,7 +947,6 @@ async function loadTasks() {
                     statusText = 'Due Today';
                 }
                 
-                // Check upload status
                 const uploadInfo = uploadsMap.get(String(task.task_id));
                 const hasUpload = uploadInfo && uploadInfo.uploaded;
                 
@@ -815,7 +1009,6 @@ async function loadTasks() {
                                     ${task.completed && task.grade ? `<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Score: ${task.grade}</span>` : ''}
                                 </div>
                                 
-                                <!-- Upload Section -->
                                 <div class="upload-section">
                                     <div class="flex items-center justify-between flex-wrap gap-2">
                                         ${task.hasUpload ? `
@@ -1033,7 +1226,7 @@ async function loadTaskChart(progress) {
 }
 
 // =============================
-// 👨‍💼 Admin Functions
+// 👨‍💼 Admin Functions (WITH EDIT POINTS)
 // =============================
 async function loadAdminData() {
     try {
@@ -1352,6 +1545,12 @@ async function loadAdminClassStudents(classNum) {
                     <div class="student-name">${student.full_name || student.username}</div>
                     <div class="student-username">@${student.username}</div>
                     <div class="student-class">Class ${student.class}</div>
+                    <div class="mt-2">
+                        <button onclick="event.stopPropagation(); openEditPointsForStudent('${student.username}', '${student.full_name || student.username}', '${classNum}')" 
+                                class="edit-points-btn">
+                            <i class="fas fa-edit mr-1"></i>Edit Points
+                        </button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -1362,6 +1561,235 @@ async function loadAdminClassStudents(classNum) {
         console.error('Error loading admin class students:', error);
         const adminClassStudentsList = document.getElementById('adminClassStudentsList');
         adminClassStudentsList.innerHTML = '<p class="text-red-500 text-center py-8">Error loading students. Please try again.</p>';
+    }
+}
+
+// Open edit points modal for a specific student showing all their tasks
+async function openEditPointsForStudent(username, fullName, classNum) {
+    try {
+        const modal = document.getElementById('editPointsModal');
+        const content = document.getElementById('editPointsContent');
+        
+        currentEditTaskInfo = {
+            username,
+            fullName,
+            classNum,
+            multiEdit: true // Flag for multi-task edit mode
+        };
+        
+        document.getElementById('editPointsError').classList.add('hidden');
+        document.getElementById('editPointsSuccess').classList.add('hidden');
+        
+        content.innerHTML = `
+            <div class="space-y-3">
+                <div class="bg-blue-50 rounded-lg p-3">
+                    <p class="text-sm text-blue-800"><strong>Student:</strong> ${fullName}</p>
+                    <p class="text-sm text-blue-800"><strong>Class:</strong> ${classNum}</p>
+                </div>
+                <p class="text-xs text-gray-500">
+                    <i class="fas fa-spinner fa-spin mr-1"></i>Loading tasks...
+                </p>
+            </div>
+        `;
+        
+        modal.classList.remove('hidden');
+        
+        // Load tasks and progress
+        const [tasks, progress] = await Promise.all([
+            api.getSheet(`${classNum}_tasks_master`),
+            api.getSheet(`${username}_progress`)
+        ]);
+        
+        if (!tasks || tasks.error || tasks.length === 0) {
+            content.innerHTML = `
+                <div class="space-y-3">
+                    <div class="bg-blue-50 rounded-lg p-3">
+                        <p class="text-sm text-blue-800"><strong>Student:</strong> ${fullName}</p>
+                    </div>
+                    <p class="text-gray-500 text-center py-4">No tasks found for this student's class.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        const progressMap = new Map();
+        if (Array.isArray(progress)) {
+            progress.forEach(p => {
+                if (p.item_type === "task" && p.status === "complete") {
+                    progressMap.set(String(p.item_id), {
+                        completed: true,
+                        grade: p.grade
+                    });
+                }
+            });
+        }
+        
+        // Build task list with edit inputs
+        const tasksHtml = tasks.map(task => {
+            const userProgress = progressMap.get(String(task.task_id));
+            const completed = !!userProgress;
+            const currentPoints = userProgress?.grade || 0;
+            
+            return `
+                <div class="admin-task-item ${completed ? 'completed' : ''}">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="task-id-badge">${task.task_id}</span>
+                                <span class="text-xs ${completed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'} px-2 py-1 rounded">
+                                    ${completed ? `Completed (${currentPoints}/30)` : 'Not Completed'}
+                                </span>
+                            </div>
+                            <h4 class="task-title">${task.title}</h4>
+                            <p class="text-xs text-gray-500">${task.subject || 'General'}</p>
+                            
+                            <div class="mt-3 flex items-center gap-3">
+                                <label class="text-xs font-medium text-gray-700">Points (0-30):</label>
+                                <input type="number" 
+                                       class="grade-input edit-task-points-input"
+                                       data-task-id="${task.task_id}"
+                                       min="0" 
+                                       max="30" 
+                                       value="${completed ? currentPoints : ''}"
+                                       placeholder="${completed ? '' : 'Enter points to complete'}">
+                                ${completed ? `
+                                    <button onclick="updateSingleTaskPoint('${task.task_id}', this)" 
+                                            class="edit-points-btn">
+                                        <i class="fas fa-save mr-1"></i>Update
+                                    </button>
+                                ` : `
+                                    <button onclick="completeSingleTask('${task.task_id}', this)" 
+                                            class="bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded text-xs font-semibold transition duration-200">
+                                        <i class="fas fa-check mr-1"></i>Complete
+                                    </button>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        content.innerHTML = `
+            <div class="space-y-3 max-h-96 overflow-y-auto">
+                <div class="bg-blue-50 rounded-lg p-3 sticky top-0 z-10">
+                    <p class="text-sm text-blue-800"><strong>Student:</strong> ${fullName}</p>
+                    <p class="text-sm text-blue-800"><strong>Class:</strong> ${classNum}</p>
+                    <p class="text-xs text-blue-600 mt-1">Total Tasks: ${tasks.length}</p>
+                </div>
+                ${tasksHtml}
+            </div>
+        `;
+        
+        // Change the save button behavior for multi-edit mode
+        const saveBtn = document.querySelector('#editPointsModal .bg-blue-600');
+        saveBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Done';
+        saveBtn.onclick = function() {
+            closeEditPointsModal();
+            // Refresh the current view
+            const selectedClass = document.getElementById('adminTaskClassSelect').value;
+            const selectedSubject = document.getElementById('adminTaskSubjectSelect').value;
+            if (selectedClass && selectedSubject) {
+                loadAdminClassSubjectData(selectedClass, selectedSubject);
+            }
+        };
+        
+    } catch (error) {
+        console.error('Error opening edit points for student:', error);
+        const content = document.getElementById('editPointsContent');
+        content.innerHTML = '<p class="text-red-500 text-center py-4">Error loading tasks. Please try again.</p>';
+    }
+}
+
+// Update single task point from the multi-edit modal
+async function updateSingleTaskPoint(taskId, button) {
+    const pointsInput = document.querySelector(`input[data-task-id="${taskId}"]`);
+    const points = parseInt(pointsInput.value);
+    
+    if (isNaN(points) || points < 0 || points > 30) {
+        alert('Please enter valid points between 0 and 30');
+        return;
+    }
+    
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    try {
+        const result = await api.updateTaskPoints(currentEditTaskInfo.username, taskId, points);
+        
+        if (result && result.success) {
+            showNotification('Points updated successfully!', 'success');
+            
+            // Update the UI for this task
+            const taskItem = button.closest('.admin-task-item');
+            const statusBadge = taskItem.querySelector('.text-xs.rounded');
+            statusBadge.className = 'text-xs bg-green-100 text-green-800 px-2 py-1 rounded';
+            statusBadge.textContent = `Completed (${points}/30)`;
+            
+            // Change button to "Update" style
+            const buttonContainer = button.parentElement;
+            buttonContainer.innerHTML = `
+                <button onclick="updateSingleTaskPoint('${taskId}', this)" 
+                        class="edit-points-btn">
+                    <i class="fas fa-save mr-1"></i>Update
+                </button>
+            `;
+        } else {
+            throw new Error(result?.error || 'Failed to update points');
+        }
+    } catch (error) {
+        console.error('Error updating task point:', error);
+        alert('Error: ' + error.message);
+    } finally {
+        button.innerHTML = originalText;
+    }
+}
+
+// Complete a single task from the multi-edit modal
+async function completeSingleTask(taskId, button) {
+    const pointsInput = document.querySelector(`input[data-task-id="${taskId}"]`);
+    const points = parseInt(pointsInput.value);
+    
+    if (isNaN(points) || points < 0 || points > 30) {
+        alert('Please enter valid points between 0 and 30');
+        return;
+    }
+    
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    try {
+        const result = await api.markTaskComplete(currentEditTaskInfo.username, taskId, points);
+        
+        if (result && result.success) {
+            showNotification('Task completed successfully!', 'success');
+            
+            // Update the UI for this task
+            const taskItem = button.closest('.admin-task-item');
+            taskItem.classList.add('completed');
+            
+            const statusBadge = taskItem.querySelector('.text-xs.rounded');
+            statusBadge.className = 'text-xs bg-green-100 text-green-800 px-2 py-1 rounded';
+            statusBadge.textContent = `Completed (${points}/30)`;
+            
+            // Change button to "Update" style
+            const buttonContainer = button.parentElement;
+            buttonContainer.innerHTML = `
+                <button onclick="updateSingleTaskPoint('${taskId}', this)" 
+                        class="edit-points-btn">
+                    <i class="fas fa-save mr-1"></i>Update
+                </button>
+            `;
+        } else {
+            throw new Error(result?.error || 'Failed to complete task');
+        }
+    } catch (error) {
+        console.error('Error completing task:', error);
+        alert('Error: ' + error.message);
+    } finally {
+        button.innerHTML = originalText;
     }
 }
 
@@ -1467,6 +1895,11 @@ async function openStudentTaskModal(username, fullName, classNum) {
                                 <div class="flex items-center space-x-2">
                                     ${statusIcon}
                                     <span class="text-xs font-medium">${statusText}</span>
+                                    <button onclick="openEditPointsModal('${username}', '${fullName}', '${task.task_id}', '${escapeHtml(task.title)}', ${currentGrade}, ${completed}, '${classNum}')" 
+                                            class="edit-points-btn" 
+                                            title="Edit Points">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
                                 </div>
                             </div>
                             <h4 class="task-title">${task.title}</h4>
@@ -1881,7 +2314,6 @@ async function loadUserUploads(username) {
             return;
         }
         
-        // Get tasks for this user's class to show task details
         let tasks = [];
         if (user.class) {
             const tasksData = await api.getSheet(`${user.class}_tasks_master`);
@@ -2087,6 +2519,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('addTaskModal').addEventListener('click', function(e) {
         if (e.target === this) {
             closeAddTaskModal();
+        }
+    });
+    
+    document.getElementById('editPointsModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeEditPointsModal();
         }
     });
     
